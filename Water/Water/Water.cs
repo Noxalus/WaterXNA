@@ -1,3 +1,4 @@
+using System;
 using System.Diagnostics;
 using System.IO;
 using System.Text;
@@ -57,6 +58,8 @@ namespace Water
         private VertexPositionNormalTexture[] _waterVertices;
         private int[] _waterIndices;
 
+        private bool _enableRenderTarget;
+
         // Refraction
         RenderTarget2D _refractionRenderTarget;
         Texture2D _refractionTexture;
@@ -64,6 +67,15 @@ namespace Water
         // Shaders
         private Effect _basicEffect;
         private Effect _refractionEffect;
+
+        // Lighting
+        private bool _enableLighting = true;
+        private Vector4 _ambientColor = new Vector4(1, 1, 1, 1);
+        private float _ambiantIntensity = 0.75f;
+        private Vector3 _diffuseLightDirection = new Vector3(1, 0, 0);
+        private Vector4 _diffuseColor = new Vector4(1, 1, 1, 1);
+        private float _diffuseIntensity = 1f;
+
 
         public Water()
         {
@@ -80,6 +92,8 @@ namespace Water
         protected override void Initialize()
         {
             _device = _graphics.GraphicsDevice;
+
+            _enableRenderTarget = false;
 
             // Graphics preferences
             _graphics.PreferredBackBufferWidth = 800;
@@ -124,7 +138,13 @@ namespace Water
         protected override void LoadContent()
         {
             PresentationParameters pp = _device.PresentationParameters;
-            _refractionRenderTarget = new RenderTarget2D(_device, pp.BackBufferWidth, pp.BackBufferHeight);
+            _refractionRenderTarget = new RenderTarget2D(
+                _device,
+                pp.BackBufferWidth,
+                pp.BackBufferHeight,
+                false,
+                GraphicsDevice.PresentationParameters.BackBufferFormat,
+                DepthFormat.Depth24);
 
             CreateRasterizerState(FillMode.Solid);
 
@@ -142,7 +162,7 @@ namespace Water
 
             // Water
             _waterHeight = 20;
-            _clippingPlane = CreatePlane(_waterHeight, Vector3.Up, _viewMatrix, true);
+            _clippingPlane = CreateClippingPlane(false);
 
             // Create vertex/index buffers
             SetUpVertices();
@@ -186,6 +206,86 @@ namespace Water
                     : FillMode.Solid;
 
                 CreateRasterizerState(newFillMode);
+            }
+
+            // Switch enable lighting
+            if (InputManager.KeyPressed(Keys.F2))
+            {
+                _enableLighting = !_enableLighting;
+            }
+
+            // Switch enable render target
+            if (InputManager.KeyPressed(Keys.F3))
+            {
+                _enableRenderTarget = !_enableRenderTarget;
+            }
+
+            // Change ambient intensity
+            if (InputManager.KeyDown(Keys.Insert))
+            {
+                _ambiantIntensity = MathHelper.Clamp(_ambiantIntensity + 0.01f, 0f, 1f);
+            }
+            else if (InputManager.KeyDown(Keys.Delete))
+            {
+                _ambiantIntensity = MathHelper.Clamp(_ambiantIntensity - 0.01f, 0f, 1f);
+            }
+
+            // Change directionnal light intensity
+            if (InputManager.KeyDown(Keys.Home))
+            {
+                _diffuseIntensity = MathHelper.Clamp(_diffuseIntensity + 0.01f, 0f, 1f);
+            }
+            else if (InputManager.KeyDown(Keys.End))
+            {
+                _diffuseIntensity = MathHelper.Clamp(_diffuseIntensity - 0.01f, 0f, 1f);
+            }
+
+            // Change directionnal light direction
+            if (InputManager.KeyDown(Keys.NumPad8))
+            {
+                _diffuseLightDirection.Z += 0.1f;
+                _diffuseLightDirection.Normalize();
+            }
+            else if (InputManager.KeyDown(Keys.NumPad5))
+            {
+                _diffuseLightDirection.Z -= 0.1f;
+                _diffuseLightDirection.Normalize();
+            }
+            else if (InputManager.KeyDown(Keys.NumPad9))
+            {
+                _diffuseLightDirection.Y += 0.1f;
+                _diffuseLightDirection.Normalize();
+            }
+            else if (InputManager.KeyDown(Keys.NumPad3))
+            {
+                _diffuseLightDirection.Y -= 0.1f;
+                _diffuseLightDirection.Normalize();
+            }
+            else if (InputManager.KeyDown(Keys.NumPad6))
+            {
+                _diffuseLightDirection.X += 0.1f;
+                _diffuseLightDirection.Normalize();
+            }
+            else if (InputManager.KeyDown(Keys.NumPad4))
+            {
+                _diffuseLightDirection.X -= 0.1f;
+                _diffuseLightDirection.Normalize();
+            }
+
+            // Change water height
+            if (InputManager.KeyDown(Keys.PageUp))
+            {
+                _waterHeight += 0.1f;
+                _clippingPlane = CreateClippingPlane(false);
+                SetUpVertices();
+                SetUpIndices();
+            }
+            else if (InputManager.KeyDown(Keys.PageDown))
+            {
+                _waterHeight -= 0.1f;
+                _clippingPlane = CreateClippingPlane(false);
+                SetUpVertices();
+                SetUpIndices();
             }
 
             #region Moving
@@ -257,19 +357,17 @@ namespace Water
             // Change rasterization setup
             _device.RasterizerState = _rasterizerState;
 
-            var depthState = new DepthStencilState
-            {
-                DepthBufferEnable = true,
-                DepthBufferWriteEnable = true
-            };
-
-            _device.DepthStencilState = depthState;
+            _device.BlendState = BlendState.Opaque;
+            _device.DepthStencilState = DepthStencilState.Default;
+            _device.SamplerStates[0] = SamplerState.LinearWrap;
 
             // Generate refraction texture
             //DrawRefractionMap();
 
+            GraphicsDevice.Clear(Color.Black);
+
             // Draw terrain
-            DrawTerrain(_refractionEffect, _viewMatrix);
+            DrawTerrain(_basicEffect, _viewMatrix);
 
             // Draw water
             //DrawWater();
@@ -281,11 +379,88 @@ namespace Water
             _spriteBatch.DrawString(_font, "Target: " + _cameraTarget.ToString(), new Vector2(0, 40), Color.White);
             _spriteBatch.DrawString(_font, "Yaw: " + _cameraYaw, new Vector2(0, 60), Color.White);
             _spriteBatch.DrawString(_font, "Pitch: " + _cameraPitch, new Vector2(0, 80), Color.White);
+            _spriteBatch.DrawString(_font, "Water height: " + _waterHeight, new Vector2(0, 100), Color.White);
+            _spriteBatch.DrawString(_font, "Ambient intensity: " + _ambiantIntensity, new Vector2(0, 120), Color.White);
+            _spriteBatch.DrawString(_font, "Diffuse light direction: " + _diffuseLightDirection.ToString(), new Vector2(0, 140), Color.White);
+            _spriteBatch.DrawString(_font, "Diffuse light intensity: " + _diffuseIntensity, new Vector2(0, 160), Color.White);
 
             _spriteBatch.End();
 
             base.Draw(gameTime);
         }
+
+        #region Draws
+
+        private void DrawTerrain(Effect effect, Matrix viewMatrix)
+        {
+            effect.CurrentTechnique = effect.Techniques["ClassicTechnique"];
+            effect.Parameters["Projection"].SetValue(_projection);
+            effect.Parameters["View"].SetValue(viewMatrix);
+            effect.Parameters["World"].SetValue(Matrix.Identity);
+            effect.Parameters["Texture"].SetValue(_terrainTexture);
+
+            if (effect == _refractionEffect)
+            {
+                effect.Parameters["ClippingPlane"].SetValue(_clippingPlane);
+            }
+            else
+            {
+                effect.Parameters["EnableLighting"].SetValue(_enableLighting);
+
+                effect.Parameters["AmbientColor"].SetValue(_ambientColor);
+                effect.Parameters["AmbientIntensity"].SetValue(_ambiantIntensity);
+
+                effect.Parameters["DiffuseLightDirection"].SetValue(_diffuseLightDirection);
+                effect.Parameters["DiffuseColor"].SetValue(_diffuseColor);
+                effect.Parameters["DiffuseIntensity"].SetValue(_diffuseIntensity);
+            }
+
+            foreach (EffectPass pass in effect.CurrentTechnique.Passes)
+            {
+                pass.Apply();
+
+                _device.DrawUserIndexedPrimitives(PrimitiveType.TriangleList, _terrainVertices, 0, _terrainVertices.Length, _terrainIndices, 0, _terrainIndices.Length / 3, VertexPositionNormalTexture.VertexDeclaration);
+            }
+        }
+
+        private void DrawWater()
+        {
+            _basicEffect.CurrentTechnique = _basicEffect.Techniques["ClassicTechnique"];
+            _basicEffect.Parameters["Projection"].SetValue(_projection);
+            _basicEffect.Parameters["View"].SetValue(_viewMatrix);
+            _basicEffect.Parameters["World"].SetValue(Matrix.Identity);
+
+            _basicEffect.Parameters["Texture"].SetValue(_enableRenderTarget ? _refractionTexture : _terrainTexture);
+
+            foreach (EffectPass pass in _basicEffect.CurrentTechnique.Passes)
+            {
+                pass.Apply();
+
+                _device.DrawUserIndexedPrimitives(PrimitiveType.TriangleList, _waterVertices, 0, _waterVertices.Length, _waterIndices, 0, _waterIndices.Length / 3, VertexPositionNormalTexture.VertexDeclaration);
+            }
+        }
+
+        private void DrawRefractionMap()
+        {
+            _device.SetRenderTarget(_refractionRenderTarget);
+
+            _device.Clear(ClearOptions.Target, Color.CornflowerBlue, 1.0f, 1);
+
+            DrawTerrain(_refractionEffect, _viewMatrix);
+
+            _device.SetRenderTarget(null);
+            _refractionTexture = _refractionRenderTarget;
+
+            // Display render target to a file
+            /*
+            using(var fs = new FileStream(@"renderTarget.png", FileMode.OpenOrCreate))
+            {
+                _refractionTexture.SaveAsPng(fs, 1024, 1024);
+            }
+            */
+        }
+
+        #endregion
 
         private void LoadHeightData(string heightMapFile)
         {
@@ -321,12 +496,51 @@ namespace Water
             {
                 for (int y = 0; y < _terrainSize.Y; y++)
                 {
-                    int i = x + y * _terrainSize.X;
+                    int i = x + y*_terrainSize.X;
                     _terrainVertices[i].Position = new Vector3(x, _terrainHeights[x, y], y);
-                    _terrainVertices[i].TextureCoordinate = new Vector2(((float)x / (float)_terrainSize.X), 1 - ((float)y / (float)_terrainSize.Y));
+                    _terrainVertices[i].TextureCoordinate = new Vector2(((float) x/(float) _terrainSize.X),
+                        1 - ((float) y/(float) _terrainSize.Y));
 
                     // Compute normals
                     _terrainVertices[i].Normal = Vector3.Zero;
+
+                    Vector3 normal;
+                    float deltaHeight;
+                    if (x > 0)
+                    {
+                        if (x + 1 < _terrainSize.X)
+                        {
+                            //deltaHeight = _terrainHeights[i - _terrainSize.Y] - _terrainHeights[i + _terrainSize.Y];
+                            deltaHeight = _terrainHeights[x - 1, y] - _terrainHeights[x + 1, y];
+                        }
+                        else
+                        {
+                            //deltaHeight = _terrainHeights[i - _terrainSize.Y] - _terrainHeights[i];
+                            deltaHeight = _terrainHeights[x - 1, y] - _terrainHeights[x, y];
+                        }
+                    }
+                    else
+                        deltaHeight = _terrainHeights[x, y] - _terrainHeights[x + 1, y];
+
+                    var normalizedVector = new Vector3(0.0f, 1.0f, deltaHeight);
+                    normalizedVector.Normalize();
+                    _terrainVertices[i].Normal += normalizedVector;
+                    if (y > 0)
+                    {
+                        if (y + 1 < _terrainSize.Y)
+                            deltaHeight = _terrainHeights[x, y - 1] - _terrainHeights[x, y + 1];
+                        else
+                            deltaHeight = _terrainHeights[x, y - 1] - _terrainHeights[x, y];
+                    }
+                    else
+                    {
+                        deltaHeight = _terrainHeights[x, y] - _terrainHeights[x, y + 1];
+                    }
+
+                    normalizedVector = new Vector3(deltaHeight, 1.0f, 0.0f);
+                    normalizedVector.Normalize();
+                    _terrainVertices[i].Normal += normalizedVector;
+                    _terrainVertices[i].Normal.Normalize();
                 }
             }
 
@@ -335,22 +549,22 @@ namespace Water
 
             // Bottom left
             _waterVertices[0].Position = new Vector3(0, _waterHeight, 0);
-            _waterVertices[0].TextureCoordinate = new Vector2(0, 0);
+            _waterVertices[0].TextureCoordinate = new Vector2(0, 1);
             _waterVertices[0].Normal = new Vector3(0, 0, 0);
 
             // Top left
             _waterVertices[1].Position = new Vector3(0, _waterHeight, _terrainSize.Y);
-            _waterVertices[1].TextureCoordinate = new Vector2(0, 1);
+            _waterVertices[1].TextureCoordinate = new Vector2(0, 0);
             _waterVertices[1].Normal = new Vector3(0, 0, 0);
 
             // Top right
             _waterVertices[2].Position = new Vector3(_terrainSize.X, _waterHeight, _terrainSize.Y);
-            _waterVertices[2].TextureCoordinate = new Vector2(1, 1);
+            _waterVertices[2].TextureCoordinate = new Vector2(1, 0);
             _waterVertices[2].Normal = new Vector3(0, 0, 0);
 
             // Bottom right
             _waterVertices[3].Position = new Vector3(_terrainSize.X, _waterHeight, 0);
-            _waterVertices[3].TextureCoordinate = new Vector2(1, 0);
+            _waterVertices[3].TextureCoordinate = new Vector2(1, 1);
             _waterVertices[3].Normal = new Vector3(0, 0, 0);
         }
 
@@ -401,79 +615,12 @@ namespace Water
             };
         }
 
-        private Vector4 CreatePlane(float height, Vector3 planeNormalDirection, Matrix currentViewMatrix, bool clipSide)
+        private Vector4 CreateClippingPlane(bool showUp)
         {
-            planeNormalDirection.Normalize();
-            var planeCoeffs = new Vector4(planeNormalDirection, height);
-            if (clipSide)
-                planeCoeffs *= -1;
+            var clippingPlane = new Vector4(0.0f, -1.0f, 0.0f, _waterHeight + 0.1f);
 
-            Matrix worldViewProjection = currentViewMatrix * _projection;
-            Matrix inverseWorldViewProjection = Matrix.Invert(worldViewProjection);
-            inverseWorldViewProjection = Matrix.Transpose(inverseWorldViewProjection);
-
-            var plane = Vector4.Transform(planeCoeffs, inverseWorldViewProjection);
-
-            return new Vector4(0.0f, -1.0f, 0.0f, _waterHeight + 0.1f);
+            return (showUp) ? -clippingPlane : clippingPlane;
         }
 
-        #region Draws
-
-        private void DrawTerrain(Effect effect, Matrix viewMatrix)
-        {
-            effect.CurrentTechnique = effect.Techniques["ClassicTechnique"];
-            effect.Parameters["Projection"].SetValue(_projection);
-            effect.Parameters["View"].SetValue(viewMatrix);
-            effect.Parameters["World"].SetValue(Matrix.Identity);
-            effect.Parameters["Texture"].SetValue(_terrainTexture);
-
-            if (effect == _refractionEffect)
-            {
-                effect.Parameters["ClippingPlane"].SetValue(_clippingPlane);
-            }
-
-            foreach (EffectPass pass in effect.CurrentTechnique.Passes)
-            {
-                pass.Apply();
-
-                _device.DrawUserIndexedPrimitives(PrimitiveType.TriangleList, _terrainVertices, 0, _terrainVertices.Length, _terrainIndices, 0, _terrainIndices.Length / 3, VertexPositionNormalTexture.VertexDeclaration);
-            }
-        }
-
-        private void DrawWater()
-        {
-            _basicEffect.CurrentTechnique = _basicEffect.Techniques["ClassicTechnique"];
-            _basicEffect.Parameters["Projection"].SetValue(_projection);
-            _basicEffect.Parameters["View"].SetValue(_viewMatrix);
-            _basicEffect.Parameters["World"].SetValue(Matrix.Identity);
-            _basicEffect.Parameters["Texture"].SetValue(_refractionTexture);
-
-            foreach (EffectPass pass in _basicEffect.CurrentTechnique.Passes)
-            {
-                pass.Apply();
-
-                _device.DrawUserIndexedPrimitives(PrimitiveType.TriangleList, _waterVertices, 0, _waterVertices.Length, _waterIndices, 0, _waterIndices.Length / 3, VertexPositionNormalTexture.VertexDeclaration);
-            }
-        }
-
-        private void DrawRefractionMap()
-        {
-            _device.SetRenderTarget(_refractionRenderTarget);
-            _device.Clear(Color.CornflowerBlue);
-            DrawTerrain(_refractionEffect, _viewMatrix);
-
-            _device.SetRenderTarget(null);
-            _refractionTexture = _refractionRenderTarget;
-
-            // Display render target to a file
-            /*
-            using(var fs = new FileStream(@"renderTarget.png", FileMode.OpenOrCreate))
-            {
-                _refractionTexture.SaveAsPng(fs, 1024, 1024);
-            }
-            */
-        }
-
-        #endregion
     }
 }

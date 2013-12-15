@@ -3,6 +3,18 @@ float4x4 View;
 float4x4 Projection;
 Texture2D Texture;
 
+// General lighting
+bool EnableLighting;
+
+// Ambient lighting
+float4 AmbientColor;
+float AmbientIntensity;
+
+// Diffuse lighting
+float3 DiffuseLightDirection;
+float4 DiffuseColor;
+float DiffuseIntensity;
+
 sampler2D SampleType = sampler_state
 {
 	Texture = Texture;
@@ -50,7 +62,22 @@ VertexShaderOutput VertexShaderFunction(VertexShaderInput input)
 
 float4 PixelShaderFunction(VertexShaderOutput input) : COLOR0
 {
-	return tex2D(SampleType, input.UV);
+	float4 textureColor = tex2D(SampleType, input.UV);
+	float4 color;
+
+	if (EnableLighting)
+	{
+
+		float lightIntensity = dot(input.Normal, DiffuseLightDirection);
+		color = saturate(DiffuseColor * DiffuseIntensity * lightIntensity);
+
+		color = saturate(color * textureColor);
+		color = saturate(color * (AmbientColor * AmbientIntensity));
+	}
+	else
+		color = textureColor;
+
+	return color;
 }
 
 technique ClassicTechnique

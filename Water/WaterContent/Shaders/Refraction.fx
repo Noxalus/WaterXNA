@@ -19,33 +19,42 @@ struct VertexShaderInput
     float4 Position : POSITION0;
 	float2 UV  		: TEXCOORD0;
 	float3 Normal 	: NORMAL;
-
-    // TODO: add input channels such as texture
-    // coordinates and vertex colors here.
 };
 
 struct VertexShaderOutput
 {
-    float4 Position      : POSITION0;
-	float2 UV  		     : TEXCOORD0;
-	float3 Normal		 : TEXCOORD1;
-	float4 Clipping : TEXCOORD2;
-
-    // TODO: add vertex shader outputs such as colors and texture
-    // coordinates here. These values will automatically be interpolated
-    // over the triangle, and provided as input to your pixel shader.
+    float4 Position           : POSITION0;
+	float2 UV  		          : TEXCOORD0;
+	float3 Normal		      : TEXCOORD1;
+	float4 Clipping		      : TEXCOORD2;
+	float4 RefractionPosition : TEXCOORD3;
 };
 
 VertexShaderOutput VertexShaderFunction(VertexShaderInput input)
 {
     VertexShaderOutput output;
+	matrix viewProjectWorld;
+
+	// Change the position vector to be 4 units for proper matrix calculations.
+	input.Position.w = 1.0f;
 
     float4 worldPosition = mul(input.Position, World);
     float4 viewPosition = mul(worldPosition, View);
     output.Position = mul(viewPosition, Projection);
 
-	output.UV = input.UV;
+	float4x4 preViewProjection = mul(View, Projection);
+	float4x4 preWorldViewProjection = mul(World, preViewProjection);
+
+	// Create the view projection world matrix for refraction.
+	viewProjectWorld = mul(View, Projection);
+	viewProjectWorld = mul(World, viewProjectWorld);
+
+	// Calculate the input position against the viewProjectWorld matrix.
+	output.RefractionPosition = output.Position;
+
 	output.Normal = input.Normal;
+
+	output.UV = input.UV;
 
 	// Clipping
 	output.Clipping = dot(input.Position, ClippingPlane.xyz) + ClippingPlane.w;
@@ -55,9 +64,18 @@ VertexShaderOutput VertexShaderFunction(VertexShaderInput input)
 
 float4 PixelShaderFunction(VertexShaderOutput input) : COLOR0
 {
+	float2 refractTexCoord;
+	float4 refractionColor;
+
 	clip(input.Clipping.x);
 
-	return tex2D(SampleType, input.UV);
+	// Calculate the projected refraction texture coordinates.
+	refractTexCoord.x = (input.RefractionPosition.x / input.RefractionPosition.w) / 2.0f + 0.5f;
+	refractTexCoord.y = (-input.RefractionPosition.y / input.RefractionPosition.w) / 2.0f + 0.5f;
+
+	//return tex2D(SampleType, refractTexCoord);
+	//return float4(1, 1, 0, 0);
+	return float4(refractTexCoord.x, refractTexCoord.y, 0, 0);
 }
 
 technique ClassicTechnique
