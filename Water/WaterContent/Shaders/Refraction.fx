@@ -2,6 +2,7 @@ float4x4 World;
 float4x4 View;
 float4x4 Projection;
 Texture2D Texture;
+float4 ClippingPlane;
 
 sampler2D SampleType = sampler_state
 {
@@ -25,9 +26,10 @@ struct VertexShaderInput
 
 struct VertexShaderOutput
 {
-    float4 Position : POSITION0;
-	float2 UV  		: TEXCOORD0;
-	float3 Normal   : TEXCOORD1;
+    float4 Position      : POSITION0;
+	float2 UV  		     : TEXCOORD0;
+	float3 Normal		 : TEXCOORD1;
+	float4 Clipping : TEXCOORD2;
 
     // TODO: add vertex shader outputs such as colors and texture
     // coordinates here. These values will automatically be interpolated
@@ -45,11 +47,16 @@ VertexShaderOutput VertexShaderFunction(VertexShaderInput input)
 	output.UV = input.UV;
 	output.Normal = input.Normal;
 
+	// Clipping
+	output.Clipping = dot(input.Position, ClippingPlane.xyz) + ClippingPlane.w;
+
     return output;
 }
 
 float4 PixelShaderFunction(VertexShaderOutput input) : COLOR0
 {
+	clip(input.Clipping.x);
+
 	return tex2D(SampleType, input.UV);
 }
 
