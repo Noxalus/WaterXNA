@@ -76,6 +76,10 @@ namespace Water
         private Vector4 _diffuseColor = new Vector4(1, 1, 1, 1);
         private float _diffuseIntensity = 1f;
 
+        // Specular lighting
+        float _shininess = 200;
+        Vector4 _specularColor = new Vector4(1, 1, 1, 1);
+        float _specularIntensity = 1;
 
         public Water()
         {
@@ -198,6 +202,7 @@ namespace Water
             if (InputManager.KeyDown(Keys.Escape))
                 this.Exit();
 
+            #region Configuration region
             // Switch fill mode
             if (InputManager.KeyPressed(Keys.F1))
             {
@@ -272,6 +277,26 @@ namespace Water
                 _diffuseLightDirection.Normalize();
             }
 
+            // Change specular intensity
+            if (InputManager.KeyDown(Keys.P))
+            {
+                _specularIntensity = MathHelper.Clamp(_specularIntensity + 0.01f, 0f, 1f);
+            }
+            else if(InputManager.KeyDown(Keys.M))
+            {
+                _specularIntensity = MathHelper.Clamp(_specularIntensity - 0.01f, 0f, 1f);
+            }
+
+            // Change specular shininess
+            if (InputManager.KeyDown(Keys.L))
+            {
+                _shininess = MathHelper.Clamp(_shininess + 1, 0, 500);
+            }
+            else if (InputManager.KeyDown(Keys.O))
+            {
+                _shininess = MathHelper.Clamp(_shininess - 1, 0, 500);
+            }
+
             // Change water height
             if (InputManager.KeyDown(Keys.PageUp))
             {
@@ -287,6 +312,7 @@ namespace Water
                 SetUpVertices();
                 SetUpIndices();
             }
+            #endregion
 
             #region Moving
             var deltaTime = (float)gameTime.ElapsedGameTime.TotalSeconds;
@@ -383,6 +409,8 @@ namespace Water
             _spriteBatch.DrawString(_font, "Ambient intensity: " + _ambiantIntensity, new Vector2(0, 120), Color.White);
             _spriteBatch.DrawString(_font, "Diffuse light direction: " + _diffuseLightDirection.ToString(), new Vector2(0, 140), Color.White);
             _spriteBatch.DrawString(_font, "Diffuse light intensity: " + _diffuseIntensity, new Vector2(0, 160), Color.White);
+            _spriteBatch.DrawString(_font, "Specular intensity: " + _specularIntensity, new Vector2(0, 180), Color.White);
+            _spriteBatch.DrawString(_font, "Specular shininess: " + (1 - _shininess / 500), new Vector2(0, 200), Color.White);
 
             _spriteBatch.End();
 
@@ -407,12 +435,21 @@ namespace Water
             {
                 effect.Parameters["EnableLighting"].SetValue(_enableLighting);
 
+                // Ambient
                 effect.Parameters["AmbientColor"].SetValue(_ambientColor);
                 effect.Parameters["AmbientIntensity"].SetValue(_ambiantIntensity);
 
+                // Diffuse
                 effect.Parameters["DiffuseLightDirection"].SetValue(_diffuseLightDirection);
                 effect.Parameters["DiffuseColor"].SetValue(_diffuseColor);
                 effect.Parameters["DiffuseIntensity"].SetValue(_diffuseIntensity);
+
+                // Specular
+                effect.Parameters["Shininess"].SetValue(_shininess);
+                effect.Parameters["SpecularColor"].SetValue(_specularColor);
+                effect.Parameters["SpecularIntensity"].SetValue(_specularIntensity);
+                effect.Parameters["ViewVector"].SetValue(_cameraTarget);
+
             }
 
             foreach (EffectPass pass in effect.CurrentTechnique.Passes)

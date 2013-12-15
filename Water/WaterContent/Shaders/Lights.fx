@@ -15,6 +15,12 @@ float3 DiffuseLightDirection;
 float4 DiffuseColor;
 float DiffuseIntensity;
 
+// Specular lighting
+float Shininess;
+float4 SpecularColor;
+float SpecularIntensity;
+float3 ViewVector;
+
 sampler2D SampleType = sampler_state
 {
 	Texture = Texture;
@@ -67,12 +73,19 @@ float4 PixelShaderFunction(VertexShaderOutput input) : COLOR0
 
 	if (EnableLighting)
 	{
-
 		float lightIntensity = dot(input.Normal, DiffuseLightDirection);
 		color = saturate(DiffuseColor * DiffuseIntensity * lightIntensity);
 
+		float3 light = normalize(DiffuseLightDirection);
+		float3 normal = normalize(input.Normal);
+		float3 r = normalize(2 * dot(light, normal) * normal - light);
+		float3 v = normalize(mul(normalize(ViewVector), World));
+
+		float dotProduct = dot(r, v);
+		float4 specular = SpecularIntensity * SpecularColor * max(pow(dotProduct, Shininess), 0) * length(color);
+
 		color = saturate(color * textureColor);
-		color = saturate(color * (AmbientColor * AmbientIntensity));
+		color = saturate(color * (AmbientColor * AmbientIntensity) + specular);
 	}
 	else
 		color = textureColor;
