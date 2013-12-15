@@ -21,6 +21,7 @@ namespace Water
 
         // Text
         private SpriteFont _font;
+        private bool _displayInfo = true;
 
         // Camera
         private Vector3 _cameraPosition;
@@ -80,6 +81,12 @@ namespace Water
         float _shininess = 200;
         Vector4 _specularColor = new Vector4(1, 1, 1, 1);
         float _specularIntensity = 1;
+
+        // Skyboxes
+        private Model _skyboxCube;
+        private TextureCube _skyboxTexture;
+        private Effect _skyboxEffect;
+        private float _skyboxSize = 500f;
 
         public Water()
         {
@@ -175,6 +182,11 @@ namespace Water
             // Shaders
             _basicEffect = Content.Load<Effect>("Shaders/Lights");
             _refractionEffect = Content.Load<Effect>("Shaders/Refraction");
+
+            // Skyboxes
+            _skyboxCube = Content.Load<Model>("Skyboxes/Cube");
+            _skyboxTexture = Content.Load<TextureCube>("Skyboxes/Islands");
+            _skyboxEffect = Content.Load<Effect>("Shaders/Skybox");
         }
 
         /// <summary>
@@ -223,6 +235,12 @@ namespace Water
             if (InputManager.KeyPressed(Keys.F3))
             {
                 _enableRenderTarget = !_enableRenderTarget;
+            }
+
+            // Switch enable info displaying
+            if (InputManager.KeyPressed(Keys.F4))
+            {
+                _displayInfo = !_displayInfo;
             }
 
             // Change ambient intensity
@@ -392,6 +410,9 @@ namespace Water
 
             GraphicsDevice.Clear(Color.Black);
 
+            // Draw skybox
+            DrawSkybox(_viewMatrix, _projection, _cameraPosition);
+
             // Draw terrain
             DrawTerrain(_basicEffect, _viewMatrix);
 
@@ -399,20 +420,29 @@ namespace Water
             //DrawWater();
 
             // Display text
-            _spriteBatch.Begin();
+            if (_displayInfo)
+            {
+                _spriteBatch.Begin();
 
-            _spriteBatch.DrawString(_font, "Position: " + _cameraPosition.ToString(), new Vector2(0, 20), Color.White);
-            _spriteBatch.DrawString(_font, "Target: " + _cameraTarget.ToString(), new Vector2(0, 40), Color.White);
-            _spriteBatch.DrawString(_font, "Yaw: " + _cameraYaw, new Vector2(0, 60), Color.White);
-            _spriteBatch.DrawString(_font, "Pitch: " + _cameraPitch, new Vector2(0, 80), Color.White);
-            _spriteBatch.DrawString(_font, "Water height: " + _waterHeight, new Vector2(0, 100), Color.White);
-            _spriteBatch.DrawString(_font, "Ambient intensity: " + _ambiantIntensity, new Vector2(0, 120), Color.White);
-            _spriteBatch.DrawString(_font, "Diffuse light direction: " + _diffuseLightDirection.ToString(), new Vector2(0, 140), Color.White);
-            _spriteBatch.DrawString(_font, "Diffuse light intensity: " + _diffuseIntensity, new Vector2(0, 160), Color.White);
-            _spriteBatch.DrawString(_font, "Specular intensity: " + _specularIntensity, new Vector2(0, 180), Color.White);
-            _spriteBatch.DrawString(_font, "Specular shininess: " + (1 - _shininess / 500), new Vector2(0, 200), Color.White);
+                _spriteBatch.DrawString(_font, "Position: " + _cameraPosition.ToString(), new Vector2(0, 20),
+                    Color.White);
+                _spriteBatch.DrawString(_font, "Target: " + _cameraTarget.ToString(), new Vector2(0, 40), Color.White);
+                _spriteBatch.DrawString(_font, "Yaw: " + _cameraYaw, new Vector2(0, 60), Color.White);
+                _spriteBatch.DrawString(_font, "Pitch: " + _cameraPitch, new Vector2(0, 80), Color.White);
+                _spriteBatch.DrawString(_font, "Water height: " + _waterHeight, new Vector2(0, 100), Color.White);
+                _spriteBatch.DrawString(_font, "Ambient intensity: " + _ambiantIntensity, new Vector2(0, 120),
+                    Color.White);
+                _spriteBatch.DrawString(_font, "Diffuse light direction: " + _diffuseLightDirection.ToString(),
+                    new Vector2(0, 140), Color.White);
+                _spriteBatch.DrawString(_font, "Diffuse light intensity: " + _diffuseIntensity, new Vector2(0, 160),
+                    Color.White);
+                _spriteBatch.DrawString(_font, "Specular intensity: " + _specularIntensity, new Vector2(0, 180),
+                    Color.White);
+                _spriteBatch.DrawString(_font, "Specular shininess: " + (1 - _shininess/500), new Vector2(0, 200),
+                    Color.White);
 
-            _spriteBatch.End();
+                _spriteBatch.End();
+            }
 
             base.Draw(gameTime);
         }
@@ -495,6 +525,34 @@ namespace Water
                 _refractionTexture.SaveAsPng(fs, 1024, 1024);
             }
             */
+        }
+
+        public void DrawSkybox(Matrix view, Matrix projection, Vector3 cameraPosition)
+        {
+            // Go through each pass in the effect, but we know there is only one...
+            foreach (EffectPass pass in _skyboxEffect.CurrentTechnique.Passes)
+            {
+                // Draw all of the components of the mesh, but we know the cube really
+                // only has one mesh
+                foreach (ModelMesh mesh in _skyboxCube.Meshes)
+                {
+                    // Assign the appropriate values to each of the parameters
+                    foreach (ModelMeshPart part in mesh.MeshParts)
+                    {
+                        Matrix skyboxWorld = Matrix.CreateScale(_skyboxSize)*Matrix.CreateTranslation(_cameraPosition);
+
+                        part.Effect = _skyboxEffect;
+                        part.Effect.Parameters["World"].SetValue(skyboxWorld);
+                        part.Effect.Parameters["View"].SetValue(view);
+                        part.Effect.Parameters["Projection"].SetValue(projection);
+                        part.Effect.Parameters["SkyboxTexture"].SetValue(_skyboxTexture);
+                        part.Effect.Parameters["CameraPosition"].SetValue(_cameraPosition);
+                    }
+
+                    // Draw the mesh with the skybox effect
+                    mesh.Draw();
+                }
+            }
         }
 
         #endregion
