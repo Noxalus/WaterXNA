@@ -39,7 +39,7 @@ namespace Water
         private float _cameraYaw; // horizontal
 
         // Matrices
-        private Matrix _projection;
+        private Matrix _projectionMatrix;
         private Matrix _viewMatrix;
 
         // Input
@@ -71,15 +71,15 @@ namespace Water
 
         // Lighting
         private bool _enableLighting = true;
-        private Vector4 _ambientColor = new Vector4(1, 1, 1, 1);
+        private readonly Vector4 _ambientColor = new Vector4(1, 1, 1, 1);
         private float _ambiantIntensity = 0.75f;
-        private Vector3 _diffuseLightDirection = new Vector3(1, 0, 0);
-        private Vector4 _diffuseColor = new Vector4(1, 1, 1, 1);
+        private Vector3 _diffuseLightDirection = new Vector3(0, 1, 0);
+        private readonly Vector4 _diffuseColor = new Vector4(1, 1, 1, 1);
         private float _diffuseIntensity = 1f;
 
         // Specular lighting
         float _shininess = 200;
-        Vector4 _specularColor = new Vector4(1, 1, 1, 1);
+        readonly Vector4 _specularColor = new Vector4(1, 1, 1, 1);
         float _specularIntensity = 1;
 
         // Skyboxes
@@ -129,7 +129,7 @@ namespace Water
 
             _aspectRatio = (float)_device.Viewport.Width / (float)_device.Viewport.Height;
 
-            _projection = Matrix.CreatePerspectiveFieldOfView(MathHelper.ToRadians(_fieldOfView), _aspectRatio, _nearPlane, _farPlane);
+            _projectionMatrix = Matrix.CreatePerspectiveFieldOfView(MathHelper.ToRadians(_fieldOfView), _aspectRatio, _nearPlane, _farPlane);
 
             // Inputs
             Mouse.SetPosition(_device.Viewport.Width / 2, _device.Viewport.Height / 2);
@@ -406,18 +406,18 @@ namespace Water
             _device.SamplerStates[0] = SamplerState.LinearWrap;
 
             // Generate refraction texture
-            //DrawRefractionMap();
+            DrawRefractionMap();
 
             GraphicsDevice.Clear(Color.Black);
 
             // Draw skybox
-            DrawSkybox(_viewMatrix, _projection, _cameraPosition);
+            DrawSkybox(_viewMatrix, _projectionMatrix, _cameraPosition);
 
             // Draw terrain
             DrawTerrain(_basicEffect, _viewMatrix);
-
+            
             // Draw water
-            //DrawWater();
+            DrawWater();
 
             // Display text
             if (_displayInfo)
@@ -452,7 +452,7 @@ namespace Water
         private void DrawTerrain(Effect effect, Matrix viewMatrix)
         {
             effect.CurrentTechnique = effect.Techniques["ClassicTechnique"];
-            effect.Parameters["Projection"].SetValue(_projection);
+            effect.Parameters["Projection"].SetValue(_projectionMatrix);
             effect.Parameters["View"].SetValue(viewMatrix);
             effect.Parameters["World"].SetValue(Matrix.Identity);
             effect.Parameters["Texture"].SetValue(_terrainTexture);
@@ -493,7 +493,7 @@ namespace Water
         private void DrawWater()
         {
             _basicEffect.CurrentTechnique = _basicEffect.Techniques["ClassicTechnique"];
-            _basicEffect.Parameters["Projection"].SetValue(_projection);
+            _basicEffect.Parameters["Projection"].SetValue(_projectionMatrix);
             _basicEffect.Parameters["View"].SetValue(_viewMatrix);
             _basicEffect.Parameters["World"].SetValue(Matrix.Identity);
 
@@ -513,6 +513,7 @@ namespace Water
 
             _device.Clear(ClearOptions.Target, Color.CornflowerBlue, 1.0f, 1);
 
+            DrawSkybox(_viewMatrix, _projectionMatrix, _cameraPosition);
             DrawTerrain(_refractionEffect, _viewMatrix);
 
             _device.SetRenderTarget(null);

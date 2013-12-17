@@ -6,12 +6,12 @@ float4 ClippingPlane;
 
 sampler2D SampleType = sampler_state
 {
-	Texture = Texture;
+	Texture = <Texture>;
 	MinFilter = LINEAR;
 	MagFilter = LINEAR;
 	MipFilter = LINEAR;
-	AddressU = WRAP;
-	AddressV = WRAP;
+	AddressU = CLAMP;
+	AddressV = CLAMP;
 };
 
 struct VertexShaderInput
@@ -50,7 +50,9 @@ VertexShaderOutput VertexShaderFunction(VertexShaderInput input)
 	viewProjectWorld = mul(World, viewProjectWorld);
 
 	// Calculate the input position against the viewProjectWorld matrix.
-	output.RefractionPosition = output.Position;
+	float4x4 worldViewProj = mul(World, View);
+	worldViewProj = mul(worldViewProj, Projection);
+	output.RefractionPosition = mul(input.Position, worldViewProj);
 
 	output.Normal = input.Normal;
 
@@ -66,16 +68,28 @@ float4 PixelShaderFunction(VertexShaderOutput input) : COLOR0
 {
 	float2 refractTexCoord;
 	float4 refractionColor;
+	float4 projTexC;
 
 	clip(input.Clipping.x);
 
+	//transform the projective texcoords to NDC space
+	//and scale and offset xy to correctly sample a DX texture
+	projTexC = input.RefractionPosition;
+	projTexC.xyz /= projTexC.w;
+	projTexC.x = 0.5f*projTexC.x + 0.5f;
+	projTexC.y = -0.5f*projTexC.y + 0.5f;
+	projTexC.z = .1f / projTexC.z; //refract more based on distance from the camera
+	
 	// Calculate the projected refraction texture coordinates.
 	refractTexCoord.x = (input.RefractionPosition.x / input.RefractionPosition.w) / 2.0f + 0.5f;
 	refractTexCoord.y = (-input.RefractionPosition.y / input.RefractionPosition.w) / 2.0f + 0.5f;
 
+	float4 refr = tex2D(SampleType, projTexC.xy - projTexC.z /* * normalT.xz*/);
+
+	return refr;
 	//return tex2D(SampleType, refractTexCoord);
-	//return float4(1, 1, 0, 0);
-	return float4(refractTexCoord.x, refractTexCoord.y, 0, 0);
+	//return float4(0, 1, 0, 0);
+	//return float4(refractTexCoord.x, refractTexCoord.y, 0, 0);
 }
 
 technique ClassicTechnique
