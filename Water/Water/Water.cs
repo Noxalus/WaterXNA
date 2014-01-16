@@ -1,7 +1,4 @@
-using System;
-using System.Diagnostics;
 using System.IO;
-using System.Text;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
@@ -42,17 +39,20 @@ namespace Water
         private Matrix _projectionMatrix;
         private Matrix _viewMatrix;
 
+        private Matrix _reflectionViewMatrix;
+
         // Input
         private MouseState _mouseState;
 
         // Terrain
         private float[,] _terrainHeights;
         private Point _terrainSize;
-        private float _terrainMaxHeight = 50;
+        private const float _terrainMaxHeight = 50;
         private Texture2D _terrainTexture;
         private VertexPositionNormalTexture[] _terrainVertices;
         private int[] _terrainIndices;
-        private Vector4 _clippingPlane;
+        private Vector4 _refractionClippingPlane;
+        private Vector4 _reflectionClippingPlane;
 
         // Water
         private float _waterHeight;
@@ -65,12 +65,18 @@ namespace Water
         RenderTarget2D _refractionRenderTarget;
         Texture2D _refractionTexture;
 
+        // Refraction
+        RenderTarget2D _reflectionRenderTarget;
+        Texture2D _reflectionTexture;
+
         // Shaders
         private Effect _basicEffect;
         private Effect _refractionEffect;
+        private Effect _reflectionEffect;
+        private Effect _waterEffect;
 
         // Lighting
-        private bool _enableLighting = true;
+        private bool _enableLighting = false;
         private readonly Vector4 _ambientColor = new Vector4(1, 1, 1, 1);
         private float _ambiantIntensity = 0.75f;
         private Vector3 _diffuseLightDirection = new Vector3(0, 1, 0);
@@ -88,6 +94,13 @@ namespace Water
         private Effect _skyboxEffect;
         private float _skyboxSize = 500f;
 
+        // Skydome
+        Model _skyDome;
+        Texture2D _cloudMap;
+
+        // Debug
+        private int _renderTargetCounter = 0;
+
         public Water()
         {
             _graphics = new GraphicsDeviceManager(this);
@@ -104,7 +117,7 @@ namespace Water
         {
             _device = _graphics.GraphicsDevice;
 
-            _enableRenderTarget = false;
+            _enableRenderTarget = true;
 
             // Graphics preferences
             _graphics.PreferredBackBufferWidth = 800;
@@ -127,7 +140,7 @@ namespace Water
             _cameraPitch = 0.0f;
             _cameraYaw = 0.0f;
 
-            _aspectRatio = (float)_device.Viewport.Width / (float)_device.Viewport.Height;
+            _aspectRatio = (float)_device.Viewport.Width / _device.Viewport.Height;
 
             _projectionMatrix = Matrix.CreatePerspectiveFieldOfView(MathHelper.ToRadians(_fieldOfView), _aspectRatio, _nearPlane, _farPlane);
 
@@ -149,7 +162,17 @@ namespace Water
         protected override void LoadContent()
         {
             PresentationParameters pp = _device.PresentationParameters;
+
+            // Render targets
             _refractionRenderTarget = new RenderTarget2D(
+                _device,
+                pp.BackBufferWidth,
+                pp.BackBufferHeight,
+                false,
+                GraphicsDevice.PresentationParameters.BackBufferFormat,
+                DepthFormat.Depth24);
+
+            _reflectionRenderTarget = new RenderTarget2D(
                 _device,
                 pp.BackBufferWidth,
                 pp.BackBufferHeight,
@@ -173,7 +196,8 @@ namespace Water
 
             // Water
             _waterHeight = 20;
-            _clippingPlane = CreateClippingPlane(false);
+            _refractionClippingPlane = CreateClippingPlane(false);
+            _reflectionClippingPlane = CreateClippingPlane(true);
 
             // Create vertex/index buffers
             SetUpVertices();
@@ -182,11 +206,17 @@ namespace Water
             // Shaders
             _basicEffect = Content.Load<Effect>("Shaders/Lights");
             _refractionEffect = Content.Load<Effect>("Shaders/Refraction");
+            _reflectionEffect = Content.Load<Effect>("Shaders/Reflection");
+            _waterEffect = Content.Load<Effect>("Shaders/Water");
 
             // Skyboxes
             _skyboxCube = Content.Load<Model>("Skyboxes/Cube");
             _skyboxTexture = Content.Load<TextureCube>("Skyboxes/Islands");
             _skyboxEffect = Content.Load<Effect>("Shaders/Skybox");
+
+            // Skydome
+            _skyDome = Content.Load<Model>("Skyboxes/Dome");
+            _skyDome.Meshes[0].MeshParts[0].Effect = _basicEffect.Clone();
         }
 
         /// <summary>
@@ -205,14 +235,14 @@ namespace Water
         /// <param name="gameTime">Provides a snapshot of timing values.</param>
         protected override void Update(GameTime gameTime)
         {
-            if (!this.IsActive)
+            if (!IsActive)
                 return;
 
             MouseState mouse = Mouse.GetState();
 
             // Allows the game to exit
             if (InputManager.KeyDown(Keys.Escape))
-                this.Exit();
+                Exit();
 
             #region Configuration region
             // Switch fill mode
@@ -300,7 +330,7 @@ namespace Water
             {
                 _specularIntensity = MathHelper.Clamp(_specularIntensity + 0.01f, 0f, 1f);
             }
-            else if(InputManager.KeyDown(Keys.M))
+            else if (InputManager.KeyDown(Keys.M))
             {
                 _specularIntensity = MathHelper.Clamp(_specularIntensity - 0.01f, 0f, 1f);
             }
@@ -319,14 +349,16 @@ namespace Water
             if (InputManager.KeyDown(Keys.PageUp))
             {
                 _waterHeight += 0.1f;
-                _clippingPlane = CreateClippingPlane(false);
+                _refractionClippingPlane = CreateClippingPlane(false);
+                _reflectionClippingPlane = CreateClippingPlane(true);
                 SetUpVertices();
                 SetUpIndices();
             }
             else if (InputManager.KeyDown(Keys.PageDown))
             {
                 _waterHeight -= 0.1f;
-                _clippingPlane = CreateClippingPlane(false);
+                _refractionClippingPlane = CreateClippingPlane(false);
+                _reflectionClippingPlane = CreateClippingPlane(true);
                 SetUpVertices();
                 SetUpIndices();
             }
@@ -387,6 +419,17 @@ namespace Water
 
             _viewMatrix = Matrix.CreateLookAt(_cameraPosition, _cameraTarget, Vector3.Up);
 
+            // Compute reflection view matrix
+            Vector3 reflCameraPosition = _cameraPosition;
+            reflCameraPosition.Y = -_cameraPosition.Y + _waterHeight * 2;
+            Vector3 reflTargetPos = _cameraTarget;
+            reflTargetPos.Y = -_cameraTarget.Y + _waterHeight * 2;
+
+            Vector3 cameraRight = Vector3.Transform(new Vector3(1, 0, 0), cameraMoveRotationMatrix);
+            Vector3 invUpVector = Vector3.Cross(cameraRight, reflTargetPos - reflCameraPosition);
+
+            _reflectionViewMatrix = Matrix.CreateLookAt(reflCameraPosition, reflTargetPos, invUpVector);
+
             base.Update(gameTime);
         }
 
@@ -396,8 +439,6 @@ namespace Water
         /// <param name="gameTime">Provides a snapshot of timing values.</param>
         protected override void Draw(GameTime gameTime)
         {
-            GraphicsDevice.Clear(Color.CornflowerBlue);
-
             // Change rasterization setup
             _device.RasterizerState = _rasterizerState;
 
@@ -405,17 +446,23 @@ namespace Water
             _device.DepthStencilState = DepthStencilState.Default;
             _device.SamplerStates[0] = SamplerState.LinearWrap;
 
+            _device.Clear(ClearOptions.Target | ClearOptions.DepthBuffer, Color.CornflowerBlue, 1.0f, 0);
+
             // Generate refraction texture
             DrawRefractionMap();
 
-            GraphicsDevice.Clear(Color.Black);
+            // Generate reflection texture
+            DrawReflectionMap();
+
+            _device.Clear(ClearOptions.Target | ClearOptions.DepthBuffer, Color.CornflowerBlue, 1.0f, 0);
 
             // Draw skybox
-            DrawSkybox(_viewMatrix, _projectionMatrix, _cameraPosition);
+            //DrawSkybox(_viewMatrix, _projectionMatrix, _cameraPosition);
 
             // Draw terrain
             DrawTerrain(_basicEffect, _viewMatrix);
-            
+            //DrawTerrain(_reflectionEffect, _reflectionViewMatrix);
+
             // Draw water
             DrawWater();
 
@@ -438,7 +485,7 @@ namespace Water
                     Color.White);
                 _spriteBatch.DrawString(_font, "Specular intensity: " + _specularIntensity, new Vector2(0, 180),
                     Color.White);
-                _spriteBatch.DrawString(_font, "Specular shininess: " + (1 - _shininess/500), new Vector2(0, 200),
+                _spriteBatch.DrawString(_font, "Specular shininess: " + (1 - _shininess / 500), new Vector2(0, 200),
                     Color.White);
 
                 _spriteBatch.End();
@@ -459,7 +506,11 @@ namespace Water
 
             if (effect == _refractionEffect)
             {
-                effect.Parameters["ClippingPlane"].SetValue(_clippingPlane);
+                effect.Parameters["ClippingPlane"].SetValue(_refractionClippingPlane);
+            }
+            else if (effect == _reflectionEffect)
+            {
+                effect.Parameters["ClippingPlane"].SetValue(_reflectionClippingPlane);
             }
             else
             {
@@ -492,14 +543,17 @@ namespace Water
 
         private void DrawWater()
         {
-            _basicEffect.CurrentTechnique = _basicEffect.Techniques["ClassicTechnique"];
-            _basicEffect.Parameters["Projection"].SetValue(_projectionMatrix);
-            _basicEffect.Parameters["View"].SetValue(_viewMatrix);
-            _basicEffect.Parameters["World"].SetValue(Matrix.Identity);
+            _waterEffect.CurrentTechnique = _waterEffect.Techniques["ClassicTechnique"];
+            _waterEffect.Parameters["Projection"].SetValue(_projectionMatrix);
+            _waterEffect.Parameters["View"].SetValue(_viewMatrix);
+            _waterEffect.Parameters["World"].SetValue(Matrix.Identity);
 
-            _basicEffect.Parameters["Texture"].SetValue(_enableRenderTarget ? _refractionTexture : _terrainTexture);
+            _waterEffect.Parameters["RefractionTexture"].SetValue(_refractionTexture);
 
-            foreach (EffectPass pass in _basicEffect.CurrentTechnique.Passes)
+            _waterEffect.Parameters["ReflectionTexture"].SetValue(_reflectionTexture);
+            _waterEffect.Parameters["ReflectionMatrix"].SetValue(_reflectionViewMatrix);
+
+            foreach (EffectPass pass in _waterEffect.CurrentTechnique.Passes)
             {
                 pass.Apply();
 
@@ -511,8 +565,9 @@ namespace Water
         {
             _device.SetRenderTarget(_refractionRenderTarget);
 
-            _device.Clear(ClearOptions.Target, Color.CornflowerBlue, 1.0f, 1);
+            _device.Clear(ClearOptions.Target | ClearOptions.DepthBuffer, Color.CornflowerBlue, 1.0f, 0);
 
+            //DrawSkybox(_viewMatrix, _projectionMatrix, _cameraPosition);
             DrawSkybox(_viewMatrix, _projectionMatrix, _cameraPosition);
             DrawTerrain(_refractionEffect, _viewMatrix);
 
@@ -521,14 +576,37 @@ namespace Water
 
             // Display render target to a file
             /*
-            using(var fs = new FileStream(@"renderTarget.png", FileMode.OpenOrCreate))
+            using(var fs = new FileStream(@"renderTargetRefraction #" + _renderTargetCounter + ".png", FileMode.OpenOrCreate))
             {
-                _refractionTexture.SaveAsPng(fs, 1024, 1024);
+                _refractionTexture.SaveAsPng(fs, _graphics.PreferredBackBufferWidth, _graphics.PreferredBackBufferHeight);
+                _renderTargetCounter++;
             }
             */
         }
 
-        public void DrawSkybox(Matrix view, Matrix projection, Vector3 cameraPosition)
+        private void DrawReflectionMap()
+        {
+            _device.SetRenderTarget(_reflectionRenderTarget);
+
+            _device.Clear(ClearOptions.Target | ClearOptions.DepthBuffer, Color.CornflowerBlue, 1.0f, 0);
+
+            DrawSkybox(_reflectionViewMatrix, _projectionMatrix, _cameraPosition);
+            DrawTerrain(_reflectionEffect, _reflectionViewMatrix);
+
+            _device.SetRenderTarget(null);
+            _reflectionTexture = _reflectionRenderTarget;
+
+            /*
+            // Display render target to a file
+            using(var fs = new FileStream(@"renderTargetReflection.png", FileMode.OpenOrCreate))
+            {
+                _reflectionTexture.SaveAsPng(fs, _graphics.PreferredBackBufferWidth, _graphics.PreferredBackBufferHeight);
+                _renderTargetCounter++;
+            }
+            */
+        }
+
+        private void DrawSkybox(Matrix view, Matrix projection, Vector3 cameraPosition)
         {
             // Go through each pass in the effect, but we know there is only one...
             foreach (EffectPass pass in _skyboxEffect.CurrentTechnique.Passes)
@@ -540,7 +618,7 @@ namespace Water
                     // Assign the appropriate values to each of the parameters
                     foreach (ModelMeshPart part in mesh.MeshParts)
                     {
-                        Matrix skyboxWorld = Matrix.CreateScale(_skyboxSize)*Matrix.CreateTranslation(_cameraPosition);
+                        Matrix skyboxWorld = Matrix.CreateScale(_skyboxSize) * Matrix.CreateTranslation(_cameraPosition);
 
                         part.Effect = _skyboxEffect;
                         part.Effect.Parameters["World"].SetValue(skyboxWorld);
@@ -592,10 +670,10 @@ namespace Water
             {
                 for (int y = 0; y < _terrainSize.Y; y++)
                 {
-                    int i = x + y*_terrainSize.X;
+                    int i = x + y * _terrainSize.X;
                     _terrainVertices[i].Position = new Vector3(x, _terrainHeights[x, y], y);
-                    _terrainVertices[i].TextureCoordinate = new Vector2(((float) x/(float) _terrainSize.X),
-                        1 - ((float) y/(float) _terrainSize.Y));
+                    _terrainVertices[i].TextureCoordinate = new Vector2((x / (float)_terrainSize.X),
+                        1 - (y / (float)_terrainSize.Y));
 
                     // Compute normals
                     _terrainVertices[i].Normal = Vector3.Zero;

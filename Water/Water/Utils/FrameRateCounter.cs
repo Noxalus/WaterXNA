@@ -1,17 +1,16 @@
-﻿using Microsoft.Xna.Framework;
-using System;
+﻿using System;
+using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 
 namespace Water.Utils
 {
     public class FrameRateCounter : DrawableGameComponent
     {
-        SpriteBatch _spriteBatch;
-        SpriteFont _spriteFont;
-
-        int _frameRate = 0;
-        int _frameCounter = 0;
-        TimeSpan _elapsedTime = TimeSpan.Zero;
+        private TimeSpan _elapsedTime = TimeSpan.Zero;
+        private int _frameCounter;
+        private int _frameRate;
+        private SpriteBatch _spriteBatch;
+        private SpriteFont _spriteFont;
 
         public FrameRateCounter(Game game)
             : base(game)

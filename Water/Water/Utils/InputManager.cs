@@ -5,26 +5,26 @@ using Microsoft.Xna.Framework.Input;
 
 namespace Water.Utils
 {
-    class InputManager : Microsoft.Xna.Framework.GameComponent
+    internal class InputManager : GameComponent
     {
         #region Mouse Field Region
 
-        static MouseState _mouseState;
-        static MouseState _lastMouseState;
+        private static MouseState _mouseState;
+        private static MouseState _lastMouseState;
 
         #endregion
 
         #region Keyboard Field Region
 
-        static KeyboardState _keyboardState;
-        static KeyboardState _lastKeyboardState;
+        private static KeyboardState _keyboardState;
+        private static KeyboardState _lastKeyboardState;
 
         #endregion
 
         #region Game Pad Field Region
 
-        static GamePadState[] _gamePadStates;
-        static GamePadState[] _lastGamePadStates;
+        private static GamePadState[] _gamePadStates;
+        private static GamePadState[] _lastGamePadStates;
 
         #endregion
 
@@ -79,10 +79,10 @@ namespace Water.Utils
 
             _keyboardState = Keyboard.GetState();
 
-            _gamePadStates = new GamePadState[Enum.GetValues(typeof(PlayerIndex)).Length];
+            _gamePadStates = new GamePadState[Enum.GetValues(typeof (PlayerIndex)).Length];
 
-            foreach (PlayerIndex index in Enum.GetValues(typeof(PlayerIndex)))
-                _gamePadStates[(int)index] = GamePad.GetState(index);
+            foreach (PlayerIndex index in Enum.GetValues(typeof (PlayerIndex)))
+                _gamePadStates[(int) index] = GamePad.GetState(index);
         }
 
         #endregion
@@ -102,9 +102,9 @@ namespace Water.Utils
             _lastKeyboardState = _keyboardState;
             _keyboardState = Keyboard.GetState();
 
-            _lastGamePadStates = (GamePadState[])_gamePadStates.Clone();
-            foreach (PlayerIndex index in Enum.GetValues(typeof(PlayerIndex)))
-                _gamePadStates[(int)index] = GamePad.GetState(index);
+            _lastGamePadStates = (GamePadState[]) _gamePadStates.Clone();
+            foreach (PlayerIndex index in Enum.GetValues(typeof (PlayerIndex)))
+                _gamePadStates[(int) index] = GamePad.GetState(index);
 
             base.Update(gameTime);
         }
@@ -123,46 +123,46 @@ namespace Water.Utils
         {
             return
                 (KeyPressed(Keys.Up) ||
-                ButtonPressed(Buttons.DPadUp, PlayerIndex.One) ||
-                ButtonPressed(Buttons.LeftThumbstickUp, PlayerIndex.One));
+                 ButtonPressed(Buttons.DPadUp, PlayerIndex.One) ||
+                 ButtonPressed(Buttons.LeftThumbstickUp, PlayerIndex.One));
         }
 
         public static bool PressedDown()
         {
             return
                 (KeyPressed(Keys.Down) ||
-                ButtonPressed(Buttons.DPadDown, PlayerIndex.One) ||
-                ButtonPressed(Buttons.LeftThumbstickDown, PlayerIndex.One));
+                 ButtonPressed(Buttons.DPadDown, PlayerIndex.One) ||
+                 ButtonPressed(Buttons.LeftThumbstickDown, PlayerIndex.One));
         }
 
         public static bool PressedLeft()
         {
             return
                 (KeyPressed(Keys.Left) ||
-                ButtonPressed(Buttons.DPadLeft, PlayerIndex.One) ||
-                ButtonPressed(Buttons.LeftThumbstickLeft, PlayerIndex.One));
+                 ButtonPressed(Buttons.DPadLeft, PlayerIndex.One) ||
+                 ButtonPressed(Buttons.LeftThumbstickLeft, PlayerIndex.One));
         }
 
         public static bool PressedRight()
         {
             return
                 (KeyPressed(Keys.Right) ||
-                ButtonPressed(Buttons.DPadRight, PlayerIndex.One) ||
-                ButtonPressed(Buttons.LeftThumbstickRight, PlayerIndex.One));
+                 ButtonPressed(Buttons.DPadRight, PlayerIndex.One) ||
+                 ButtonPressed(Buttons.LeftThumbstickRight, PlayerIndex.One));
         }
 
         public static bool PressedAction()
         {
             return
                 (KeyPressed(Keys.Enter) ||
-                ButtonPressed(Buttons.A, PlayerIndex.One));
+                 ButtonPressed(Buttons.A, PlayerIndex.One));
         }
 
         public static bool PressedCancel()
         {
             return
                 (KeyPressed(Keys.Escape) ||
-                ButtonPressed(Buttons.B, PlayerIndex.One));
+                 ButtonPressed(Buttons.B, PlayerIndex.One));
         }
 
         #endregion
@@ -191,13 +191,13 @@ namespace Water.Utils
         public static bool KeyReleased(Keys key)
         {
             return _keyboardState.IsKeyUp(key) &&
-                _lastKeyboardState.IsKeyDown(key);
+                   _lastKeyboardState.IsKeyDown(key);
         }
 
         public static bool KeyPressed(Keys key)
         {
             return _keyboardState.IsKeyDown(key) &&
-                _lastKeyboardState.IsKeyUp(key);
+                   _lastKeyboardState.IsKeyUp(key);
         }
 
         public static bool KeyDown(Keys key)
@@ -221,29 +221,30 @@ namespace Water.Utils
 
         public static bool ButtonReleased(Buttons button, PlayerIndex index)
         {
-            return _gamePadStates[(int)index].IsButtonUp(button) &&
-                _lastGamePadStates[(int)index].IsButtonDown(button);
+            return _gamePadStates[(int) index].IsButtonUp(button) &&
+                   _lastGamePadStates[(int) index].IsButtonDown(button);
         }
 
         public static bool ButtonPressed(Buttons button, PlayerIndex index)
         {
-            return _gamePadStates[(int)index].IsButtonDown(button) &&
-                _lastGamePadStates[(int)index].IsButtonUp(button);
+            return _gamePadStates[(int) index].IsButtonDown(button) &&
+                   _lastGamePadStates[(int) index].IsButtonUp(button);
         }
 
         public static bool ButtonDown(Buttons button, PlayerIndex index)
         {
-            return _gamePadStates[(int)index].IsButtonDown(button);
+            return _gamePadStates[(int) index].IsButtonDown(button);
         }
 
         public static bool HavePressedButton(PlayerIndex index)
         {
-            return _gamePadStates[(int)index] != _lastGamePadStates[(int)index];
+            return _gamePadStates[(int) index] != _lastGamePadStates[(int) index];
         }
 
         public static Buttons[] GetPressedButton(PlayerIndex index)
         {
-            return Enum.GetValues(typeof(Buttons)).Cast<Buttons>().Where(button => ButtonPressed(button, index)).ToArray();
+            return
+                Enum.GetValues(typeof (Buttons)).Cast<Buttons>().Where(button => ButtonPressed(button, index)).ToArray();
         }
 
         #endregion
