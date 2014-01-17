@@ -61,6 +61,18 @@ namespace Water
 
         private bool _enableRenderTarget;
 
+        // Wave normal maps
+        private Texture2D _waveNormalMap0;
+        private Texture2D _waveNormalMap1;
+
+        // Waves velocity
+        private Vector2 _waveVelocity0;
+        private Vector2 _waveVelocity1;
+
+        // Wave normal map offsets
+        private Vector2 _waveNormalMapOffset0;
+        private Vector2 _waveNormalMapOffset1;
+
         // Refraction
         RenderTarget2D _refractionRenderTarget;
         Texture2D _refractionTexture;
@@ -92,7 +104,7 @@ namespace Water
         private Model _skyboxCube;
         private TextureCube _skyboxTexture;
         private Effect _skyboxEffect;
-        private float _skyboxSize = 500f;
+        private float _skyboxSize = 5000f;
 
         // Skydome
         Model _skyDome;
@@ -128,7 +140,7 @@ namespace Water
 
             // Camera init
             _nearPlane = 1.0f;
-            _farPlane = 1000.0f;
+            _farPlane = 10000.0f;
             _fieldOfView = 45.0f;
 
             _cameraPosition = new Vector3(0.0f, 0.0f, 0.0f);
@@ -143,6 +155,10 @@ namespace Water
             _aspectRatio = (float)_device.Viewport.Width / _device.Viewport.Height;
 
             _projectionMatrix = Matrix.CreatePerspectiveFieldOfView(MathHelper.ToRadians(_fieldOfView), _aspectRatio, _nearPlane, _farPlane);
+
+            // Waves
+            _waveVelocity0 = new Vector2(0.01f, 0.03f) * 10;
+            _waveVelocity1 = new Vector2(-0.01f, 0.03f) * 10;
 
             // Inputs
             Mouse.SetPosition(_device.Viewport.Width / 2, _device.Viewport.Height / 2);
@@ -188,11 +204,13 @@ namespace Water
             // Load font file
             _font = Content.Load<SpriteFont>(@"Fonts/ClassicFont");
 
-            // Load texture
+            // Load textures
             _terrainTexture = Content.Load<Texture2D>(@"Textures/terrain_texture");
+            _waveNormalMap0 = Content.Load<Texture2D>(@"Textures/wave0");
+            _waveNormalMap1 = Content.Load<Texture2D>(@"Textures/wave1");
 
             // Load height map
-            LoadHeightData(Content.RootDirectory + "/Textures/terrain_height.raw");
+            LoadHeightData(Content.RootDirectory + "/terrain_height.raw");
 
             // Water
             _waterHeight = 20;
@@ -235,6 +253,8 @@ namespace Water
         /// <param name="gameTime">Provides a snapshot of timing values.</param>
         protected override void Update(GameTime gameTime)
         {
+            var deltaTime = (float)gameTime.ElapsedGameTime.TotalSeconds;
+
             if (!IsActive)
                 return;
 
@@ -365,7 +385,6 @@ namespace Water
             #endregion
 
             #region Moving
-            var deltaTime = (float)gameTime.ElapsedGameTime.TotalSeconds;
 
             Vector3 motion = Vector3.Zero;
 
@@ -399,6 +418,8 @@ namespace Water
             }
             #endregion
 
+            #region Camera
+            
             // Mouse
             float mouseX = mouse.X - _mouseState.X;
             float mouseY = mouse.Y - _mouseState.Y;
@@ -430,6 +451,22 @@ namespace Water
 
             _reflectionViewMatrix = Matrix.CreateLookAt(reflCameraPosition, reflTargetPos, invUpVector);
 
+            #endregion
+
+
+            //update the wave map offsets so that they will scroll across the water
+            _waveNormalMapOffset0 += _waveVelocity0 * deltaTime;
+            _waveNormalMapOffset1 += _waveVelocity1 * deltaTime;
+
+            if (_waveNormalMapOffset0.X >= 1.0f || _waveNormalMapOffset0.X <= -1.0f)
+                _waveNormalMapOffset0.X = 0.0f;
+            if (_waveNormalMapOffset1.X >= 1.0f || _waveNormalMapOffset1.X <= -1.0f)
+                _waveNormalMapOffset1.X = 0.0f;
+            if (_waveNormalMapOffset0.Y >= 1.0f || _waveNormalMapOffset0.Y <= -1.0f)
+                _waveNormalMapOffset0.Y = 0.0f;
+            if (_waveNormalMapOffset1.Y >= 1.0f || _waveNormalMapOffset1.Y <= -1.0f)
+                _waveNormalMapOffset1.Y = 0.0f;
+
             base.Update(gameTime);
         }
 
@@ -457,11 +494,10 @@ namespace Water
             _device.Clear(ClearOptions.Target | ClearOptions.DepthBuffer, Color.CornflowerBlue, 1.0f, 0);
 
             // Draw skybox
-            //DrawSkybox(_viewMatrix, _projectionMatrix, _cameraPosition);
+            DrawSkybox(_viewMatrix, _projectionMatrix, _cameraPosition);
 
             // Draw terrain
             DrawTerrain(_basicEffect, _viewMatrix);
-            //DrawTerrain(_reflectionEffect, _reflectionViewMatrix);
 
             // Draw water
             DrawWater();
@@ -553,6 +589,14 @@ namespace Water
             _waterEffect.Parameters["ReflectionTexture"].SetValue(_reflectionTexture);
             _waterEffect.Parameters["ReflectionMatrix"].SetValue(_reflectionViewMatrix);
 
+            _waterEffect.Parameters["WaveNormalMap0"].SetValue(_waveNormalMap0);
+            _waterEffect.Parameters["WaveNormalMap1"].SetValue(_waveNormalMap1);
+
+            _waterEffect.Parameters["WaveMapOffset0"].SetValue(_waveNormalMapOffset0);
+            _waterEffect.Parameters["WaveMapOffset1"].SetValue(_waveNormalMapOffset1);
+
+            _waterEffect.Parameters["CameraPosition"].SetValue(_cameraPosition);
+
             foreach (EffectPass pass in _waterEffect.CurrentTechnique.Passes)
             {
                 pass.Apply();
@@ -567,7 +611,6 @@ namespace Water
 
             _device.Clear(ClearOptions.Target | ClearOptions.DepthBuffer, Color.CornflowerBlue, 1.0f, 0);
 
-            //DrawSkybox(_viewMatrix, _projectionMatrix, _cameraPosition);
             DrawSkybox(_viewMatrix, _projectionMatrix, _cameraPosition);
             DrawTerrain(_refractionEffect, _viewMatrix);
 
