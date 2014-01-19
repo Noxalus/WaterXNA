@@ -99,7 +99,6 @@ struct VertexShaderInput
 {
 	float4 Position : POSITION0;
 	float2 UV  		: TEXCOORD0;
-	float3 Normal 	: NORMAL;
 };
 
 struct VertexShaderOutput

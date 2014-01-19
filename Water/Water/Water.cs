@@ -6,19 +6,18 @@ using Water.Utils;
 
 namespace Water
 {
-    /// <summary>
-    /// This is the main type for your game
-    /// </summary>
-    public class Water : Microsoft.Xna.Framework.Game
+    public class Water : Game
     {
-        GraphicsDeviceManager _graphics;
+        #region Fields
+
+        readonly GraphicsDeviceManager _graphics;
         private GraphicsDevice _device;
         private RasterizerState _rasterizerState;
         SpriteBatch _spriteBatch;
 
         // Text
         private SpriteFont _font;
-        private bool _displayInfo = false;
+        private bool _displayInfo;
 
         // Camera
         private Vector3 _cameraPosition;
@@ -58,7 +57,7 @@ namespace Water
         private bool _drawWater;
         private Vector4 _waterColor;
         private float _waterHeight;
-        private VertexPositionNormalTexture[] _waterVertices;
+        private VertexPositionTexture[] _waterVertices;
         private int[] _waterIndices;
         private float _waveTextureScale;
 
@@ -89,30 +88,18 @@ namespace Water
         RenderTarget2D _reflectionRenderTarget;
         Texture2D _reflectionTexture;
 
+        // Lighting
+        private bool _enableLighting;
+        private Vector4 _ambientColor;
+        private float _ambientIntensity;
+        private Vector4 _diffuseColor;
+        private float _diffuseIntensity;
+
         // Sun
-        private Vector4 _sunColor; 
+        private Vector4 _sunColor;
         private Vector3 _sunDirection;
         private float _sunFactor;
         private float _sunPower;
-        
-        // Shaders
-        private Effect _basicEffect;
-        private Effect _refractionEffect;
-        private Effect _reflectionEffect;
-        private Effect _waterEffect;
-
-        // Lighting
-        private bool _enableLighting = false;
-        private readonly Vector4 _ambientColor = new Vector4(1, 1, 1, 1);
-        private float _ambiantIntensity = 0.75f;
-        private Vector3 _diffuseLightDirection = new Vector3(0, 1, 0);
-        private readonly Vector4 _diffuseColor = new Vector4(1, 1, 1, 1);
-        private float _diffuseIntensity = 1f;
-
-        // Specular lighting
-        float _shininess = 200;
-        readonly Vector4 _specularColor = new Vector4(1, 1, 1, 1);
-        float _specularIntensity = 1;
 
         // Skyboxes
         private Model _skyboxCube;
@@ -121,18 +108,20 @@ namespace Water
         private const float SkyboxSize = 5000f;
         private bool _drawSkybox;
 
+        // Shaders
+        private Effect _basicEffect;
+        private Effect _refractionEffect;
+        private Effect _reflectionEffect;
+        private Effect _waterEffect;
+
+        #endregion
+
         public Water()
         {
             _graphics = new GraphicsDeviceManager(this);
             Content.RootDirectory = "Content";
         }
 
-        /// <summary>
-        /// Allows the game to perform any initialization it needs to before starting to run.
-        /// This is where it can query for any required services and load any non-graphic
-        /// related content.  Calling base.Initialize will enumerate through any components
-        /// and initialize them as well.
-        /// </summary>
         protected override void Initialize()
         {
             _device = _graphics.GraphicsDevice;
@@ -143,6 +132,8 @@ namespace Water
             _graphics.IsFullScreen = false;
             _graphics.ApplyChanges();
             Window.Title = "Water project";
+
+            _displayInfo = false;
 
             // Camera init
             _nearPlane = 1.0f;
@@ -164,7 +155,7 @@ namespace Water
 
             // Water
             _drawWater = false;
-            _waterColor = /*new Vector4(0.5f, 1, 0.75f, 1);*/new Vector4(0.5f, 0.79f, 0.75f, 1.0f);
+            _waterColor = new Vector4(0.5f, 0.79f, 0.75f, 1.0f);
 
             _enableWaves = false;
             _enableRefraction = false;
@@ -178,9 +169,16 @@ namespace Water
             _waveVelocity0 = new Vector2(0.01f, 0.03f);
             _waveVelocity1 = new Vector2(-0.01f, 0.03f);
 
+            // Lighting
+            _enableLighting = false;
+            _ambientColor = new Vector4(.42f, .42f, .42f, 1.0f);
+            _ambientIntensity = 1.0f;
+            _diffuseColor = new Vector4(0.75f, 0.3f, 0.3f, 1.0f);
+            _diffuseIntensity = 1.0f;
+
             // Sun
             _sunColor = new Vector4(1.0f, 0.8f, 0.4f, 1.0f);
-            _sunDirection = new Vector3(-.9f, -.33f, -.27f);
+            _sunDirection = new Vector3(-.85f, -.45f, -.25f);
             _sunFactor = 1.5f;
             _sunPower = 250.0f;
 
@@ -197,10 +195,6 @@ namespace Water
             base.Initialize();
         }
 
-        /// <summary>
-        /// LoadContent will be called once per game and is the place to load
-        /// all of your content.
-        /// </summary>
         protected override void LoadContent()
         {
             PresentationParameters pp = _device.PresentationParameters;
@@ -259,20 +253,6 @@ namespace Water
             _skyboxEffect = Content.Load<Effect>("Shaders/Skybox");
         }
 
-        /// <summary>
-        /// UnloadContent will be called once per game and is the place to unload
-        /// all content.
-        /// </summary>
-        protected override void UnloadContent()
-        {
-            // TODO: Unload any non ContentManager content here
-        }
-
-        /// <summary>
-        /// Allows the game to run logic such as updating the world,
-        /// checking for collisions, gathering input, and playing audio.
-        /// </summary>
-        /// <param name="gameTime">Provides a snapshot of timing values.</param>
         protected override void Update(GameTime gameTime)
         {
             var deltaTime = (float)gameTime.ElapsedGameTime.TotalSeconds;
@@ -287,8 +267,9 @@ namespace Water
                 Exit();
 
             #region Configuration region
+
             // Switch fill mode
-            if (InputManager.KeyPressed(Keys.F1))
+            if (InputManager.KeyPressed(Keys.F2))
             {
                 var newFillMode = (_rasterizerState.FillMode == FillMode.Solid)
                     ? FillMode.WireFrame
@@ -298,19 +279,25 @@ namespace Water
             }
 
             // Switch draw water
-            if (InputManager.KeyPressed(Keys.F2))
+            if (InputManager.KeyPressed(Keys.F3))
+            {
+                _enableLighting = !_enableLighting;
+            }
+
+            // Switch draw water
+            if (InputManager.KeyPressed(Keys.F4))
             {
                 _drawWater = !_drawWater;
             }
 
             // Switch draw skybox
-            if (InputManager.KeyPressed(Keys.F3))
+            if (InputManager.KeyPressed(Keys.F10))
             {
                 _drawSkybox = !_drawSkybox;
             }
 
             // Switch enable info displaying
-            if (InputManager.KeyPressed(Keys.F4))
+            if (InputManager.KeyPressed(Keys.F1))
             {
                 _displayInfo = !_displayInfo;
             }
@@ -318,85 +305,50 @@ namespace Water
             // Change ambient intensity
             if (InputManager.KeyDown(Keys.Insert))
             {
-                _ambiantIntensity = MathHelper.Clamp(_ambiantIntensity + 0.01f, 0f, 1f);
+                _ambientIntensity = MathHelper.Clamp(_ambientIntensity + 0.1f, 0f, 10f);
             }
             else if (InputManager.KeyDown(Keys.Delete))
             {
-                _ambiantIntensity = MathHelper.Clamp(_ambiantIntensity - 0.01f, 0f, 1f);
+                _ambientIntensity = MathHelper.Clamp(_ambientIntensity - 0.1f, 0f, 10f);
             }
 
             // Change directionnal light intensity
             if (InputManager.KeyDown(Keys.Home))
             {
-                _diffuseIntensity = MathHelper.Clamp(_diffuseIntensity + 0.01f, 0f, 1f);
+                _diffuseIntensity = MathHelper.Clamp(_diffuseIntensity + 0.1f, 0f, 10f);
             }
             else if (InputManager.KeyDown(Keys.End))
             {
-                _diffuseIntensity = MathHelper.Clamp(_diffuseIntensity - 0.01f, 0f, 1f);
+                _diffuseIntensity = MathHelper.Clamp(_diffuseIntensity - 0.1f, 0f, 10f);
             }
-
-
 
             // Change directionnal light direction
             if (InputManager.KeyDown(Keys.NumPad8))
             {
-                _diffuseLightDirection.Z += 0.1f;
-
                 _sunDirection.Z += 0.1f;
             }
             else if (InputManager.KeyDown(Keys.NumPad5))
             {
-                _diffuseLightDirection.Z -= 0.1f;
-
                 _sunDirection.Z -= 0.1f;
             }
             else if (InputManager.KeyDown(Keys.NumPad9))
             {
-                _diffuseLightDirection.Y += 0.1f;
-
                 _sunDirection.Y += 0.1f;
             }
             else if (InputManager.KeyDown(Keys.NumPad3))
             {
-                _diffuseLightDirection.Y -= 0.1f;
-
                 _sunDirection.Y -= 0.1f;
             }
             else if (InputManager.KeyDown(Keys.NumPad6))
             {
-                _diffuseLightDirection.X -= 0.1f;
-
                 _sunDirection.X -= 0.1f;
             }
             else if (InputManager.KeyDown(Keys.NumPad4))
             {
-                _diffuseLightDirection.X += 0.1f;
-
                 _sunDirection.X += 0.1f;
             }
 
             _sunDirection.Normalize();
-            _diffuseLightDirection.Normalize();
-
-            // Change specular intensity
-            if (InputManager.KeyDown(Keys.P))
-            {
-                _specularIntensity = MathHelper.Clamp(_specularIntensity + 0.01f, 0f, 1f);
-            }
-            else if (InputManager.KeyDown(Keys.M))
-            {
-                _specularIntensity = MathHelper.Clamp(_specularIntensity - 0.01f, 0f, 1f);
-            }
-
-            // Change specular shininess
-            if (InputManager.KeyDown(Keys.L))
-            {
-                _shininess = MathHelper.Clamp(_shininess + 1, 0, 500);
-            }
-            else if (InputManager.KeyDown(Keys.O))
-            {
-                _shininess = MathHelper.Clamp(_shininess - 1, 0, 500);
-            }
 
             // Change water height
             if (InputManager.KeyDown(Keys.PageUp))
@@ -555,8 +507,7 @@ namespace Water
 
             #endregion
 
-
-            //update the wave map offsets so that they will scroll across the water
+            // Update the wave map offsets so that they will scroll across the water
             _waveNormalMapOffset0 += _waveVelocity0 * deltaTime;
             _waveNormalMapOffset1 += _waveVelocity1 * deltaTime;
 
@@ -615,22 +566,14 @@ namespace Water
             {
                 _spriteBatch.Begin();
 
-                _spriteBatch.DrawString(_font, "Position: " + _cameraPosition.ToString(), new Vector2(0, 20),
-                    Color.White);
+                _spriteBatch.DrawString(_font, "Position: " + _cameraPosition.ToString(), new Vector2(0, 20), Color.White);
                 _spriteBatch.DrawString(_font, "Target: " + _cameraTarget.ToString(), new Vector2(0, 40), Color.White);
                 _spriteBatch.DrawString(_font, "Yaw: " + _cameraYaw, new Vector2(0, 60), Color.White);
                 _spriteBatch.DrawString(_font, "Pitch: " + _cameraPitch, new Vector2(0, 80), Color.White);
                 _spriteBatch.DrawString(_font, "Water height: " + _waterHeight, new Vector2(0, 100), Color.White);
-                _spriteBatch.DrawString(_font, "Ambient intensity: " + _ambiantIntensity, new Vector2(0, 120),
-                    Color.White);
-                _spriteBatch.DrawString(_font, "Sun direction: " + _sunDirection,
-                    new Vector2(0, 140), Color.White);
-                _spriteBatch.DrawString(_font, "Diffuse light intensity: " + _diffuseIntensity, new Vector2(0, 160),
-                    Color.White);
-                _spriteBatch.DrawString(_font, "Specular intensity: " + _specularIntensity, new Vector2(0, 180),
-                    Color.White);
-                _spriteBatch.DrawString(_font, "Specular shininess: " + (1 - _shininess / 500), new Vector2(0, 200),
-                    Color.White);
+                _spriteBatch.DrawString(_font, "Ambient intensity: " + _ambientIntensity, new Vector2(0, 120), Color.White);
+                _spriteBatch.DrawString(_font, "Diffuse light intensity: " + _diffuseIntensity, new Vector2(0, 140), Color.White);
+                //_spriteBatch.DrawString(_font, "Sun direction: " + _sunDirection, new Vector2(0, 160), Color.White);
 
                 _spriteBatch.End();
             }
@@ -648,6 +591,18 @@ namespace Water
             effect.Parameters["World"].SetValue(Matrix.Identity);
             effect.Parameters["Texture"].SetValue(_terrainTexture);
 
+            // Lighting
+            effect.Parameters["EnableLighting"].SetValue(_enableLighting);
+
+            // Ambient
+            effect.Parameters["AmbientColor"].SetValue(_ambientColor);
+            effect.Parameters["AmbientIntensity"].SetValue(_ambientIntensity);
+
+            // Diffuse
+            effect.Parameters["DiffuseLightDirection"].SetValue(_sunDirection);
+            effect.Parameters["DiffuseColor"].SetValue(_diffuseColor);
+            effect.Parameters["DiffuseIntensity"].SetValue(_diffuseIntensity);
+
             if (effect == _refractionEffect)
             {
                 effect.Parameters["ClippingPlane"].SetValue(_refractionClippingPlane);
@@ -655,26 +610,6 @@ namespace Water
             else if (effect == _reflectionEffect)
             {
                 effect.Parameters["ClippingPlane"].SetValue(_reflectionClippingPlane);
-            }
-            else
-            {
-                effect.Parameters["EnableLighting"].SetValue(_enableLighting);
-
-                // Ambient
-                effect.Parameters["AmbientColor"].SetValue(_ambientColor);
-                effect.Parameters["AmbientIntensity"].SetValue(_ambiantIntensity);
-
-                // Diffuse
-                effect.Parameters["DiffuseLightDirection"].SetValue(_diffuseLightDirection);
-                effect.Parameters["DiffuseColor"].SetValue(_diffuseColor);
-                effect.Parameters["DiffuseIntensity"].SetValue(_diffuseIntensity);
-
-                // Specular
-                effect.Parameters["Shininess"].SetValue(_shininess);
-                effect.Parameters["SpecularColor"].SetValue(_specularColor);
-                effect.Parameters["SpecularIntensity"].SetValue(_specularIntensity);
-                effect.Parameters["ViewVector"].SetValue(_cameraTarget);
-
             }
 
             foreach (EffectPass pass in effect.CurrentTechnique.Passes)
@@ -726,7 +661,7 @@ namespace Water
             {
                 pass.Apply();
 
-                _device.DrawUserIndexedPrimitives(PrimitiveType.TriangleList, _waterVertices, 0, _waterVertices.Length, _waterIndices, 0, _waterIndices.Length / 3, VertexPositionNormalTexture.VertexDeclaration);
+                _device.DrawUserIndexedPrimitives(PrimitiveType.TriangleList, _waterVertices, 0, _waterVertices.Length, _waterIndices, 0, _waterIndices.Length / 3, VertexPositionTexture.VertexDeclaration);
             }
         }
 
@@ -744,14 +679,6 @@ namespace Water
             _device.SetRenderTarget(null);
             _refractionTexture = _refractionRenderTarget;
 
-            // Display render target to a file
-            /*
-            using(var fs = new FileStream(@"renderTargetRefraction #" + _renderTargetCounter + ".png", FileMode.OpenOrCreate))
-            {
-                _refractionTexture.SaveAsPng(fs, _graphics.PreferredBackBufferWidth, _graphics.PreferredBackBufferHeight);
-                _renderTargetCounter++;
-            }
-            */
         }
 
         private void DrawReflectionMap()
@@ -767,15 +694,6 @@ namespace Water
 
             _device.SetRenderTarget(null);
             _reflectionTexture = _reflectionRenderTarget;
-
-            /*
-            // Display render target to a file
-            using(var fs = new FileStream(@"renderTargetReflection.png", FileMode.OpenOrCreate))
-            {
-                _reflectionTexture.SaveAsPng(fs, _graphics.PreferredBackBufferWidth, _graphics.PreferredBackBufferHeight);
-                _renderTargetCounter++;
-            }
-            */
         }
 
         private void DrawSkybox(Matrix view, Matrix projection, Vector3 cameraPosition)
@@ -856,12 +774,10 @@ namespace Water
                     {
                         if (x + 1 < _terrainSize.X)
                         {
-                            //deltaHeight = _terrainHeights[i - _terrainSize.Y] - _terrainHeights[i + _terrainSize.Y];
                             deltaHeight = _terrainHeights[x - 1, y] - _terrainHeights[x + 1, y];
                         }
                         else
                         {
-                            //deltaHeight = _terrainHeights[i - _terrainSize.Y] - _terrainHeights[i];
                             deltaHeight = _terrainHeights[x - 1, y] - _terrainHeights[x, y];
                         }
                     }
@@ -891,27 +807,23 @@ namespace Water
             }
 
             // Water
-            _waterVertices = new VertexPositionNormalTexture[4];
+            _waterVertices = new VertexPositionTexture[4];
 
             // Bottom left
             _waterVertices[0].Position = new Vector3(0, _waterHeight, 0);
             _waterVertices[0].TextureCoordinate = new Vector2(0, 1);
-            _waterVertices[0].Normal = new Vector3(0, 0, 0);
 
             // Top left
             _waterVertices[1].Position = new Vector3(0, _waterHeight, _terrainSize.Y);
             _waterVertices[1].TextureCoordinate = new Vector2(0, 0);
-            _waterVertices[1].Normal = new Vector3(0, 0, 0);
 
             // Top right
             _waterVertices[2].Position = new Vector3(_terrainSize.X, _waterHeight, _terrainSize.Y);
             _waterVertices[2].TextureCoordinate = new Vector2(1, 0);
-            _waterVertices[2].Normal = new Vector3(0, 0, 0);
 
             // Bottom right
             _waterVertices[3].Position = new Vector3(_terrainSize.X, _waterHeight, 0);
             _waterVertices[3].TextureCoordinate = new Vector2(1, 1);
-            _waterVertices[3].Normal = new Vector3(0, 0, 0);
         }
 
         private void SetUpIndices()
@@ -949,7 +861,6 @@ namespace Water
             _waterIndices[3] = 2;
             _waterIndices[4] = 3;
             _waterIndices[5] = 0;
-
         }
 
         private void CreateRasterizerState(FillMode fillMode)
@@ -967,6 +878,5 @@ namespace Water
 
             return (showUp) ? -clippingPlane : clippingPlane;
         }
-
     }
 }

@@ -2,12 +2,18 @@ float4x4 World;
 float4x4 View;
 float4x4 Projection;
 float4x4 WorldInverseTranspose;
-
-float4 TintColor = float4(1, 1, 1, 1);
-float3 CameraPosition;
-
 Texture2D Texture;
 float4 ClippingPlane;
+
+// General lighting
+bool EnableLighting;
+// Ambient lighting
+float4 AmbientColor;
+float AmbientIntensity;
+// Diffuse lighting
+float3 DiffuseLightDirection;
+float4 DiffuseColor;
+float DiffuseIntensity;
 
 sampler2D SampleType = sampler_state
 {
@@ -60,7 +66,33 @@ float4 PixelShaderFunction(VertexShaderOutput input) : COLOR0
 {
 	clip(input.Clipping.x);
 
-	return tex2D(SampleType, input.UV);
+	// Get the texture color.
+	float4 textureColor = tex2D(SampleType, input.UV);
+
+	if (EnableLighting)
+	{
+		// Interpolated normals can become unnormal--so normalize.
+		float3 normal = normalize(input.Normal);
+
+		// Light vector is opposite the direction of the light.
+		float3 lightVector = -DiffuseLightDirection;
+
+		// Determine the diffuse light intensity that strikes the vertex.
+		float s = saturate(dot(lightVector, normal));
+
+		// Compute the ambient, diffuse and specular terms separatly. 
+		float3 diffuse = s * (DiffuseColor.rgb * DiffuseIntensity);
+
+		// Combine the color from lighting with the texture color.
+		float3 color = (diffuse + (AmbientColor * AmbientIntensity)) * textureColor.rgb;
+
+		// Sum all the terms together and copy over the diffuse alpha.
+		return float4(color, textureColor.a);
+	}
+	else
+	{
+		return textureColor;
+	}
 }
 
 technique ClassicTechnique
