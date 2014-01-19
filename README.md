@@ -1,7 +1,9 @@
 WaterXNA
 ========
 
-Lake water rendering project with XNA (C#/DirectX 9)
+Lake water rendering project with XNA (C#/DirectX 9).
+
+Video demonstration can be seen here: http://www.youtube.com/watch?v=VJmNeEJY-Ss
 
 ![WaterXNA](https://dl.dropboxusercontent.com/u/63123790/screenshots/Projet%203D/waterXNA.jpg)
 
