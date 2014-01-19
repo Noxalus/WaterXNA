@@ -18,7 +18,7 @@ namespace Water
 
         // Text
         private SpriteFont _font;
-        private bool _displayInfo = true;
+        private bool _displayInfo = false;
 
         // Camera
         private Vector3 _cameraPosition;
@@ -47,7 +47,7 @@ namespace Water
         // Terrain
         private float[,] _terrainHeights;
         private Point _terrainSize;
-        private const float _terrainMaxHeight = 50;
+        private const float TerrainMaxHeight = 50;
         private Texture2D _terrainTexture;
         private VertexPositionNormalTexture[] _terrainVertices;
         private int[] _terrainIndices;
@@ -55,11 +55,19 @@ namespace Water
         private Vector4 _reflectionClippingPlane;
 
         // Water
+        private bool _drawWater;
+        private Vector4 _waterColor;
         private float _waterHeight;
         private VertexPositionNormalTexture[] _waterVertices;
         private int[] _waterIndices;
+        private float _waveTextureScale;
 
-        private bool _enableRenderTarget;
+        private bool _enableWaves;
+        private bool _enableRefraction;
+        private bool _enableReflection;
+        private bool _enableFresnel;
+        private bool _enableSpecularLighting;
+        private float _refractionReflectionMergeTerm;
 
         // Wave normal maps
         private Texture2D _waveNormalMap0;
@@ -81,6 +89,12 @@ namespace Water
         RenderTarget2D _reflectionRenderTarget;
         Texture2D _reflectionTexture;
 
+        // Sun
+        private Vector4 _sunColor; 
+        private Vector3 _sunDirection;
+        private float _sunFactor;
+        private float _sunPower;
+        
         // Shaders
         private Effect _basicEffect;
         private Effect _refractionEffect;
@@ -104,14 +118,8 @@ namespace Water
         private Model _skyboxCube;
         private TextureCube _skyboxTexture;
         private Effect _skyboxEffect;
-        private float _skyboxSize = 5000f;
-
-        // Skydome
-        Model _skyDome;
-        Texture2D _cloudMap;
-
-        // Debug
-        private int _renderTargetCounter = 0;
+        private const float SkyboxSize = 5000f;
+        private bool _drawSkybox;
 
         public Water()
         {
@@ -128,8 +136,6 @@ namespace Water
         protected override void Initialize()
         {
             _device = _graphics.GraphicsDevice;
-
-            _enableRenderTarget = true;
 
             // Graphics preferences
             _graphics.PreferredBackBufferWidth = 800;
@@ -156,9 +162,27 @@ namespace Water
 
             _projectionMatrix = Matrix.CreatePerspectiveFieldOfView(MathHelper.ToRadians(_fieldOfView), _aspectRatio, _nearPlane, _farPlane);
 
+            // Water
+            _drawWater = false;
+            _waterColor = /*new Vector4(0.5f, 1, 0.75f, 1);*/new Vector4(0.5f, 0.79f, 0.75f, 1.0f);
+
+            _enableWaves = false;
+            _enableRefraction = false;
+            _enableReflection = false;
+            _enableFresnel = false;
+            _enableSpecularLighting = false;
+            _refractionReflectionMergeTerm = 0.5f;
+
             // Waves
-            _waveVelocity0 = new Vector2(0.01f, 0.03f) * 10;
-            _waveVelocity1 = new Vector2(-0.01f, 0.03f) * 10;
+            _waveTextureScale = 2.5f;
+            _waveVelocity0 = new Vector2(0.01f, 0.03f);
+            _waveVelocity1 = new Vector2(-0.01f, 0.03f);
+
+            // Sun
+            _sunColor = new Vector4(1.0f, 0.8f, 0.4f, 1.0f);
+            _sunDirection = new Vector3(-.9f, -.33f, -.27f);
+            _sunFactor = 1.5f;
+            _sunPower = 250.0f;
 
             // Inputs
             Mouse.SetPosition(_device.Viewport.Width / 2, _device.Viewport.Height / 2);
@@ -167,6 +191,8 @@ namespace Water
             // Components
             Components.Add(new FrameRateCounter(this));
             Components.Add(new InputManager(this));
+
+            _drawSkybox = false;
 
             base.Initialize();
         }
@@ -231,10 +257,6 @@ namespace Water
             _skyboxCube = Content.Load<Model>("Skyboxes/Cube");
             _skyboxTexture = Content.Load<TextureCube>("Skyboxes/Islands");
             _skyboxEffect = Content.Load<Effect>("Shaders/Skybox");
-
-            // Skydome
-            _skyDome = Content.Load<Model>("Skyboxes/Dome");
-            _skyDome.Meshes[0].MeshParts[0].Effect = _basicEffect.Clone();
         }
 
         /// <summary>
@@ -275,16 +297,16 @@ namespace Water
                 CreateRasterizerState(newFillMode);
             }
 
-            // Switch enable lighting
+            // Switch draw water
             if (InputManager.KeyPressed(Keys.F2))
             {
-                _enableLighting = !_enableLighting;
+                _drawWater = !_drawWater;
             }
 
-            // Switch enable render target
+            // Switch draw skybox
             if (InputManager.KeyPressed(Keys.F3))
             {
-                _enableRenderTarget = !_enableRenderTarget;
+                _drawSkybox = !_drawSkybox;
             }
 
             // Switch enable info displaying
@@ -313,37 +335,48 @@ namespace Water
                 _diffuseIntensity = MathHelper.Clamp(_diffuseIntensity - 0.01f, 0f, 1f);
             }
 
+
+
             // Change directionnal light direction
             if (InputManager.KeyDown(Keys.NumPad8))
             {
                 _diffuseLightDirection.Z += 0.1f;
-                _diffuseLightDirection.Normalize();
+
+                _sunDirection.Z += 0.1f;
             }
             else if (InputManager.KeyDown(Keys.NumPad5))
             {
                 _diffuseLightDirection.Z -= 0.1f;
-                _diffuseLightDirection.Normalize();
+
+                _sunDirection.Z -= 0.1f;
             }
             else if (InputManager.KeyDown(Keys.NumPad9))
             {
                 _diffuseLightDirection.Y += 0.1f;
-                _diffuseLightDirection.Normalize();
+
+                _sunDirection.Y += 0.1f;
             }
             else if (InputManager.KeyDown(Keys.NumPad3))
             {
                 _diffuseLightDirection.Y -= 0.1f;
-                _diffuseLightDirection.Normalize();
+
+                _sunDirection.Y -= 0.1f;
             }
             else if (InputManager.KeyDown(Keys.NumPad6))
             {
-                _diffuseLightDirection.X += 0.1f;
-                _diffuseLightDirection.Normalize();
+                _diffuseLightDirection.X -= 0.1f;
+
+                _sunDirection.X -= 0.1f;
             }
             else if (InputManager.KeyDown(Keys.NumPad4))
             {
-                _diffuseLightDirection.X -= 0.1f;
-                _diffuseLightDirection.Normalize();
+                _diffuseLightDirection.X += 0.1f;
+
+                _sunDirection.X += 0.1f;
             }
+
+            _sunDirection.Normalize();
+            _diffuseLightDirection.Normalize();
 
             // Change specular intensity
             if (InputManager.KeyDown(Keys.P))
@@ -382,6 +415,75 @@ namespace Water
                 SetUpVertices();
                 SetUpIndices();
             }
+
+            // Change water texture scale
+            if (InputManager.KeyDown(Keys.W))
+            {
+                _waveTextureScale = MathHelper.Clamp(_waveTextureScale - 1, 1, 500);
+            }
+            else if (InputManager.KeyDown(Keys.X))
+            {
+                _waveTextureScale = MathHelper.Clamp(_waveTextureScale + 1, 1, 500);
+            }
+
+            // Switch enable refraction
+            if (InputManager.KeyPressed(Keys.F5))
+            {
+                _enableRefraction = !_enableRefraction;
+            }
+
+            // Switch enable reflection
+            if (InputManager.KeyPressed(Keys.F6))
+            {
+                _enableReflection = !_enableReflection;
+            }
+
+            // Switch enable fresnel term
+            if (InputManager.KeyPressed(Keys.F7))
+            {
+                _enableFresnel = !_enableFresnel;
+            }
+
+            // Switch enable waves
+            if (InputManager.KeyPressed(Keys.F8))
+            {
+                _enableWaves = !_enableWaves;
+            }
+
+            // Switch enable specular lighting
+            if (InputManager.KeyPressed(Keys.F9))
+            {
+                _enableSpecularLighting = !_enableSpecularLighting;
+            }
+
+            // Change water texture scale
+            if (InputManager.KeyDown(Keys.C))
+            {
+                _refractionReflectionMergeTerm = MathHelper.Clamp(_refractionReflectionMergeTerm - 0.01f, 0, 1);
+            }
+            else if (InputManager.KeyDown(Keys.V))
+            {
+                _refractionReflectionMergeTerm = MathHelper.Clamp(_refractionReflectionMergeTerm + 0.01f, 0, 1);
+            }
+
+            // Change waves speed
+            if (InputManager.KeyDown(Keys.N))
+            {
+                _waveVelocity0.X += 0.01f;
+                _waveVelocity0.Y += 0.01f;
+
+                _waveVelocity1.X += 0.01f;
+                _waveVelocity1.Y += 0.01f;
+            }
+            else if (InputManager.KeyDown(Keys.B))
+            {
+                _waveVelocity0.X -= 0.01f;
+                _waveVelocity0.Y -= 0.01f;
+
+                _waveVelocity1.X -= 0.01f;
+                _waveVelocity1.Y -= 0.01f;
+            }
+
             #endregion
 
             #region Moving
@@ -419,7 +521,7 @@ namespace Water
             #endregion
 
             #region Camera
-            
+
             // Mouse
             float mouseX = mouse.X - _mouseState.X;
             float mouseY = mouse.Y - _mouseState.Y;
@@ -494,13 +596,19 @@ namespace Water
             _device.Clear(ClearOptions.Target | ClearOptions.DepthBuffer, Color.CornflowerBlue, 1.0f, 0);
 
             // Draw skybox
-            DrawSkybox(_viewMatrix, _projectionMatrix, _cameraPosition);
+            if (_drawSkybox)
+            {
+                DrawSkybox(_viewMatrix, _projectionMatrix, _cameraPosition);
+            }
 
             // Draw terrain
             DrawTerrain(_basicEffect, _viewMatrix);
 
             // Draw water
-            DrawWater();
+            if (_drawWater)
+            {
+                DrawWater();
+            }
 
             // Display text
             if (_displayInfo)
@@ -515,7 +623,7 @@ namespace Water
                 _spriteBatch.DrawString(_font, "Water height: " + _waterHeight, new Vector2(0, 100), Color.White);
                 _spriteBatch.DrawString(_font, "Ambient intensity: " + _ambiantIntensity, new Vector2(0, 120),
                     Color.White);
-                _spriteBatch.DrawString(_font, "Diffuse light direction: " + _diffuseLightDirection.ToString(),
+                _spriteBatch.DrawString(_font, "Sun direction: " + _sunDirection,
                     new Vector2(0, 140), Color.White);
                 _spriteBatch.DrawString(_font, "Diffuse light intensity: " + _diffuseIntensity, new Vector2(0, 160),
                     Color.White);
@@ -589,6 +697,17 @@ namespace Water
             _waterEffect.Parameters["ReflectionTexture"].SetValue(_reflectionTexture);
             _waterEffect.Parameters["ReflectionMatrix"].SetValue(_reflectionViewMatrix);
 
+            _waterEffect.Parameters["WaterColor"].SetValue(_waterColor);
+            _waterEffect.Parameters["EnableWaves"].SetValue(_enableWaves);
+
+            _waterEffect.Parameters["EnableRefraction"].SetValue(_enableRefraction);
+            _waterEffect.Parameters["EnableReflection"].SetValue(_enableReflection);
+            _waterEffect.Parameters["EnableFresnel"].SetValue(_enableFresnel);
+            _waterEffect.Parameters["EnableSpecularLighting"].SetValue(_enableSpecularLighting);
+            _waterEffect.Parameters["RefractionReflectionMergeTerm"].SetValue(_refractionReflectionMergeTerm);
+
+            _waterEffect.Parameters["WaveTextureScale"].SetValue(_waveTextureScale);
+
             _waterEffect.Parameters["WaveNormalMap0"].SetValue(_waveNormalMap0);
             _waterEffect.Parameters["WaveNormalMap1"].SetValue(_waveNormalMap1);
 
@@ -596,6 +715,12 @@ namespace Water
             _waterEffect.Parameters["WaveMapOffset1"].SetValue(_waveNormalMapOffset1);
 
             _waterEffect.Parameters["CameraPosition"].SetValue(_cameraPosition);
+
+            // Sun
+            _waterEffect.Parameters["SunColor"].SetValue(_sunColor);
+            _waterEffect.Parameters["SunDirection"].SetValue(_sunDirection);
+            _waterEffect.Parameters["SunFactor"].SetValue(_sunFactor);
+            _waterEffect.Parameters["SunPower"].SetValue(_sunPower);
 
             foreach (EffectPass pass in _waterEffect.CurrentTechnique.Passes)
             {
@@ -611,7 +736,9 @@ namespace Water
 
             _device.Clear(ClearOptions.Target | ClearOptions.DepthBuffer, Color.CornflowerBlue, 1.0f, 0);
 
-            DrawSkybox(_viewMatrix, _projectionMatrix, _cameraPosition);
+            if (_drawSkybox)
+                DrawSkybox(_viewMatrix, _projectionMatrix, _cameraPosition);
+
             DrawTerrain(_refractionEffect, _viewMatrix);
 
             _device.SetRenderTarget(null);
@@ -633,7 +760,9 @@ namespace Water
 
             _device.Clear(ClearOptions.Target | ClearOptions.DepthBuffer, Color.CornflowerBlue, 1.0f, 0);
 
-            DrawSkybox(_reflectionViewMatrix, _projectionMatrix, _cameraPosition);
+            if (_drawSkybox)
+                DrawSkybox(_reflectionViewMatrix, _projectionMatrix, _cameraPosition);
+
             DrawTerrain(_reflectionEffect, _reflectionViewMatrix);
 
             _device.SetRenderTarget(null);
@@ -661,7 +790,7 @@ namespace Water
                     // Assign the appropriate values to each of the parameters
                     foreach (ModelMeshPart part in mesh.MeshParts)
                     {
-                        Matrix skyboxWorld = Matrix.CreateScale(_skyboxSize) * Matrix.CreateTranslation(_cameraPosition);
+                        Matrix skyboxWorld = Matrix.CreateScale(SkyboxSize) * Matrix.CreateTranslation(_cameraPosition);
 
                         part.Effect = _skyboxEffect;
                         part.Effect.Parameters["World"].SetValue(skyboxWorld);
@@ -697,7 +826,7 @@ namespace Water
             {
                 for (int x = 0; x < _terrainSize.X; x++, i++)
                 {
-                    _terrainHeights[x, y] = (_terrainMaxHeight * data[i]) / 255.0f;
+                    _terrainHeights[x, y] = (TerrainMaxHeight * data[i]) / 255.0f;
                 }
             }
 

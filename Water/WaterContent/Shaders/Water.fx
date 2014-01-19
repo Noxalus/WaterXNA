@@ -18,7 +18,23 @@ float2 WaveMapOffset0;
 float2 WaveMapOffset1;
 
 //scale used on the wave maps
-float TextureScale = 200.5f;
+float WaveTextureScale;
+
+bool EnableWaves;
+bool EnableRefraction;
+bool EnableReflection;
+bool EnableFresnel;
+bool EnableSpecularLighting;
+
+float4 WaterColor;
+
+// Sun
+float4 SunColor;
+float3 SunDirection;
+float SunFactor;
+float SunPower;
+
+float RefractionReflectionMergeTerm;
 
 // Constant for Fresnel computation
 static const float R0 = 0.02037f;
@@ -63,10 +79,25 @@ sampler2D SampleTypeWaveNormalMap1 = sampler_state
 	AddressV = WRAP;
 };
 
+// Function calculating fresnel term.
+float ComputeFresnelTerm(float3 eyeVec, float3 cameraPosition)
+{
+	// We'll just use the y unit vector for spec reflection.
+	float3 up = float3(0, 1, 0);
+
+	// Compute the fresnel term to blend reflection and refraction maps
+	float angle = saturate(dot(-eyeVec, up));
+	float f = R0 + (1.0f - R0) * pow(1.0f - angle, 5.0);
+
+	//also blend based on distance
+	f = min(1.0f, f + 0.007f * cameraPosition.y);
+	
+	return f;
+}
 
 struct VertexShaderInput
 {
-    float4 Position : POSITION0;
+	float4 Position : POSITION0;
 	float2 UV  		: TEXCOORD0;
 	float3 Normal 	: NORMAL;
 };
@@ -74,38 +105,28 @@ struct VertexShaderInput
 struct VertexShaderOutput
 {
 	float4 Position					: POSITION0;
-	float3 ToEyeWorld				: TEXCOORD0;
+	float3 ToCameraVector			: TEXCOORD0;
 	float2 WaveNormalMapPosition0	: TEXCOORD1;
 	float2 WaveNormalMapPosition1	: TEXCOORD2;
-	float4 RefractionPosition		: TEXCOORD3;
-	float4 ReflectionPosition		: TEXCOORD4;
-	float4 Test						: TEXCOORD5;
-
+	float4 ReflectionPosition		: TEXCOORD3;
+	float4 RefractionPosition   	: TEXCOORD4;
 };
 
 VertexShaderOutput VertexShaderFunction(VertexShaderInput input)
 {
-    VertexShaderOutput output;
+	VertexShaderOutput output;
 	matrix viewProjectWorld;
 	matrix reflectProjectWorld;
 
 	// Change the position vector to be 4 units for proper matrix calculations.
 	input.Position.w = 1.0f;
 
-    float4 worldPosition = mul(input.Position, World);
-    float4 viewPosition = mul(worldPosition, View);
-    output.Position = mul(viewPosition, Projection);
-
-	output.ToEyeWorld = output.Position - CameraPosition;
-
-	// Create the view projection world matrix for refraction.
-	viewProjectWorld = mul(View, Projection);
-	viewProjectWorld = mul(World, viewProjectWorld);
-
-	// Calculate the input position against the viewProjectWorld matrix.
 	float4x4 worldViewProj = mul(World, View);
 	worldViewProj = mul(worldViewProj, Projection);
-	output.RefractionPosition = mul(input.Position, worldViewProj);
+
+	output.Position = mul(input.Position, worldViewProj);
+
+	output.ToCameraVector = input.Position - CameraPosition;
 
 	// Calculate reflection position
 
@@ -117,49 +138,31 @@ VertexShaderOutput VertexShaderFunction(VertexShaderInput input)
 	output.ReflectionPosition = mul(input.Position, reflectProjectWorld);
 
 	// Scroll texture coordinates.
-	output.WaveNormalMapPosition0 = (input.UV * TextureScale) + WaveMapOffset0;
-	output.WaveNormalMapPosition1 = (input.UV * TextureScale) + WaveMapOffset1;
+	output.WaveNormalMapPosition0 = (input.UV * WaveTextureScale) + WaveMapOffset0;
+	output.WaveNormalMapPosition1 = (input.UV * WaveTextureScale) + WaveMapOffset1;
 
-	output.Test = output.Position;
+	output.RefractionPosition = output.Position;
 
-    return output;
+	return output;
 }
 
 float4 PixelShaderFunction(VertexShaderOutput input) : COLOR0
 {
-	float2 refractionTexCoord;
+	// Light vector is the opposite of the light direction
+	float3 lightVector = normalize(-SunDirection);
+	float4 refractionTexCoord;
+	float4 reflectionTexCoord;
 	float4 refractionColor;
-	float2 reflectionTexCoord;
 	float4 reflectionColor;
 	float4 color;
 
+	input.ToCameraVector = normalize(input.ToCameraVector);
 
-	float4 WaterColor = float4(0.5f, 0.79f, 0.75f, 1.0f);
-	float4 SunColor = float4(1.0f, 0.8f, 0.4f, 1.0f);
-	float3 SunDirection = float3(2.6f, -1.0f, -1.5f);
-	float SunFactor = 1.5f;
-	float SunPower = 250.0f;
-	
-	// Light vector is opposite the direction of the light.
-	float3 lightVecW = -SunDirection;
-	float4 projTexC;
-
-	//transform the projective texcoords to NDC space
-	//and scale and offset xy to correctly sample a DX texture
-	projTexC = input.Test;
-	projTexC.xyz /= projTexC.w;
-	projTexC.xyz /= projTexC.w;
-	projTexC.x = 0.5f*projTexC.x + 0.5f;
-	projTexC.y = -0.5f*projTexC.y + 0.5f;
-	projTexC.z = .1f / projTexC.z; //refract more based on distance from the camera
-	
-	input.ToEyeWorld = normalize(input.ToEyeWorld);
-
-	// Sample normal map.
+	// Sample wave normal map
 	float3 normalT0 = tex2D(SampleTypeWaveNormalMap0, input.WaveNormalMapPosition0);
 	float3 normalT1 = tex2D(SampleTypeWaveNormalMap1, input.WaveNormalMapPosition1);
 
-	//unroll the normals retrieved from the normalmaps
+	// Unroll the normals retrieved from the normal maps
 	normalT0.yz = normalT0.zy;
 	normalT1.yz = normalT1.zy;
 
@@ -167,64 +170,85 @@ float4 PixelShaderFunction(VertexShaderOutput input) : COLOR0
 	normalT1 = 2.0f * normalT1 - 1.0f;
 
 	float3 normalT = normalize(0.5f * (normalT0 + normalT1));
-	float3 n1 = float3(0, 1, 0); //we'll just use the y unit vector for spec reflection.
 
-	//get the reflection vector from the eye
-	float3 R = normalize(reflect(input.ToEyeWorld, normalT));
+	float fresnelTerm = ComputeFresnelTerm(input.ToCameraVector, CameraPosition);
 
-	float4 finalColor;
-	finalColor.a = 1;
+	// Compute the reflection from sunlight
 
-	//compute the fresnel term to blend reflection and refraction maps
-	float ang = saturate(dot(-input.ToEyeWorld, n1));
-	float f = R0 + (1.0f - R0) * pow(1.0f - ang, 5.0);
+	// Get the reflection vector from the eye
+	float3 R;
+	float3 up = float3(0, 1.0f, 0);
+	float3 sunLight = 0;
 
-	//also blend based on distance
-	f = min(1.0f, f + 0.007f * CameraPosition.y);
+	if (EnableWaves)
+		R = normalize(reflect(input.ToCameraVector, normalT));
+	else
+		R = normalize(reflect(input.ToCameraVector, up));
 
-	//compute the reflection from sunlight
-	float sunFactor = SunFactor;
-	float sunPower = SunPower;
+	sunLight = SunFactor * pow(saturate(dot(R, lightVector)), SunPower) * SunColor;
+	
+	if (!EnableFresnel)
+		fresnelTerm = RefractionReflectionMergeTerm;
 
-	if (CameraPosition.y < input.Test.y)
+	// Transform the projective refraction texcoords to NDC space
+	// and scale and offset xy to correctly sample a DX texture
+	refractionTexCoord = input.RefractionPosition;
+	refractionTexCoord.xyz /= refractionTexCoord.w;
+	refractionTexCoord.x = 0.5f * refractionTexCoord.x + 0.5f;
+	refractionTexCoord.y = -0.5f * refractionTexCoord.y + 0.5f;
+	// refract more based on distance from the camera
+	refractionTexCoord.z = .1f / refractionTexCoord.z; 
+
+	// Transform the projective reflection texcoords to NDC space
+	// and scale and offset xy to correctly sample a DX texture
+	reflectionTexCoord = input.ReflectionPosition;
+	reflectionTexCoord.xyz /= reflectionTexCoord.w;
+	reflectionTexCoord.x = 0.5f * reflectionTexCoord.x + 0.5f;
+	reflectionTexCoord.y = -0.5f * reflectionTexCoord.y + 0.5f;
+	// reflect more based on distance from the camera
+	reflectionTexCoord.z = .1f / reflectionTexCoord.z;
+
+	// Sample refraction & reflection
+	if (EnableWaves)
 	{
-		sunFactor = 7.0f; //these could also be sent to the shader
-		sunPower = 55.0f;
+		// Sample the texture pixels from the textures using the updated texture coordinates.
+		refractionColor = tex2D(SampleTypeRefraction, refractionTexCoord.xy - refractionTexCoord.z * normalT.xz);
+		reflectionColor = tex2D(SampleTypeReflection, reflectionTexCoord.xy + reflectionTexCoord.z * normalT.xz);
+	}
+	else
+	{
+		refractionColor = tex2D(SampleTypeRefraction, refractionTexCoord.xy);
+		reflectionColor = tex2D(SampleTypeReflection, reflectionTexCoord.xy);
 	}
 
-	float3 sunlight = sunFactor * pow(saturate(dot(R, lightVecW)), sunPower) * SunColor;
+	if (!EnableSpecularLighting)
+		sunLight = 0;
 
-	//refractionColor = tex2D(SampleTypeRefraction, projTexC.xy - projTexC.z/* * normalT.xz*/);
-	//reflectionColor = tex2D(SampleTypeReflection, projTexC.xy + projTexC.z/* * normalT.xz*/);
+	if (!EnableRefraction && !EnableReflection)
+	{
+		color.rgb = WaterColor + sunLight;
+	}
+	else
+	{
+		if (EnableRefraction && EnableReflection)
+			color.rgb = WaterColor * lerp(refractionColor, reflectionColor, fresnelTerm) + sunLight;
+		else if (EnableRefraction)
+			color.rgb = WaterColor * refractionColor + sunLight;
+		else
+			color.rgb = WaterColor * reflectionColor + sunLight;
+	}
 
+	// alpha canal
+	color.a = 1;
 
-	// Calculate the projected refraction texture coordinates.
-	refractionTexCoord.x = (input.RefractionPosition.x / input.RefractionPosition.w) / 2.0f + 0.5f;
-	refractionTexCoord.y = (-input.RefractionPosition.y / input.RefractionPosition.w) / 2.0f + 0.5f;
-
-	// Calculate the projected reflection texture coordinates.
-	reflectionTexCoord.x = input.ReflectionPosition.x / input.ReflectionPosition.w / 2.0f + 0.5f;
-	reflectionTexCoord.y = -input.ReflectionPosition.y / input.ReflectionPosition.w / 2.0f + 0.5f;
-
-	// Sample the texture pixels from the textures using the updated texture coordinates.
-	refractionColor = tex2D(SampleTypeRefraction, refractionTexCoord + normalT.xz);
-	reflectionColor = tex2D(SampleTypeReflection, reflectionTexCoord + normalT.xz);
-
-	//only use the refraction map if we're under water
-	if (CameraPosition.y < input.Test.y)
-		f = 0.0f;
-
-	//interpolate the reflection and refraction maps based on the fresnel term and add the sunlight
-	finalColor.rgb = WaterColor * lerp(refractionColor, reflectionColor, f); //+ sunlight;
-
-	return finalColor;
+	return color;
 }
 
 technique ClassicTechnique
 {
-    pass Pass1
-    {
-        VertexShader = compile vs_2_0 VertexShaderFunction();
-        PixelShader = compile ps_2_0 PixelShaderFunction();
-    }
+	pass Pass1
+	{
+		VertexShader = compile vs_3_0 VertexShaderFunction();
+		PixelShader = compile ps_3_0 PixelShaderFunction();
+	}
 }

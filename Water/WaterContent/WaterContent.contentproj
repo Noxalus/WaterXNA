@@ -68,6 +68,7 @@
       <Importer>TextureImporter</Importer>
       <Processor>TextureProcessor</Processor>
       <ProcessorParameters_PremultiplyAlpha>False</ProcessorParameters_PremultiplyAlpha>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Compile>
     <Compile Include="Skyboxes\Cube.fbx">
       <Name>Cube</Name>
@@ -83,6 +84,7 @@
       <Name>SkyBox</Name>
       <Importer>TextureImporter</Importer>
       <Processor>TextureProcessor</Processor>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Compile>
     <Compile Include="Skyboxes\SunInSpace.dds">
       <Name>SunInSpace</Name>
@@ -98,6 +100,7 @@
       <Name>EmptySpace</Name>
       <Importer>TextureImporter</Importer>
       <Processor>TextureProcessor</Processor>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Compile>
     <None Include="terrain_height.raw">
       <Name>terrain_height</Name>
