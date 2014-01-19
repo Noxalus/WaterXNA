@@ -3,6 +3,8 @@ WaterXNA
 
 Lake water rendering project with XNA (C#/DirectX 9)
 
+![WaterXNA](https://dl.dropboxusercontent.com/u/63123790/screenshots/Projet%203D/waterXNA.jpg)
+
 # Controls
 
 ## Keyboard:
