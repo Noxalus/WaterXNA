@@ -8,6 +8,8 @@ Lake water rendering project with XNA (C#/DirectX 9)
 # Controls
 
 ## Keyboard:
+
+### Move camera
 * Z => Go straight forward
 * S => Go backward
 * Q => Strafe left
@@ -15,6 +17,7 @@ Lake water rendering project with XNA (C#/DirectX 9)
 * Space => Go up
 * CTRL => Go down
 
+### Show/Hide scene parts
 * F1 => Show/Hide some debug informations
 * F2 => Switch between wireframe and solid mode
 * F3 => Turn on/off lighting
@@ -26,10 +29,10 @@ Lake water rendering project with XNA (C#/DirectX 9)
 * F9 => Enable/Disable specular lighting onto water plane
 * F10 => Show/Hide skybox
 
+### Edit parameters
 * Insert/Delete => Increase/Decrease ambient lighting intensity
 * Home/End => Increase/Decrease diffuse lighting intensity
 * Page Up/Page Down => Increase/Decrease water level
-
 * W/X => Change water scale
 * C/V => Change refraction/reflection merge term when Fresnel is disabled
 * B/N => Change waves velocity
